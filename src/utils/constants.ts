@@ -1,8 +1,8 @@
 import { sha256 } from 'js-sha256';
 import { DatabaseState, User } from '../types';
 
-export const SUPABASE_URL = 'https://ekzzgbuwqhfifrmkkahj.supabase.co';
-export const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrenpnYnV3cWhmaWZybWtrYWhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwOTE5NjQsImV4cCI6MjEwNzY2Nzk2NH0.teuIXTviBEou3eVHhsQlO3acRLeibfVko6vIT0i0Yc4';
+export const SUPABASE_URL = ((import.meta as any)?.env?.VITE_SUPABASE_URL as string) || 'https://ekzzgbuwqhfifrmkkahj.supabase.co';
+export const SUPABASE_ANON = ((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY as string) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrenpnYnV3cWhmaWZybWtrYWhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwOTE5NjQsImV4cCI6MjEwNzY2Nzk2NH0.teuIXTviBEou3eVHhsQlO3acRLeibfVko6vIT0i0Yc4';
 
 export const DB_KEY = 'pos_parfum_db_v7_0';
 export const SESSION_KEY = 'pos_parfum_session_v7';

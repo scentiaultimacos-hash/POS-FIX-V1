@@ -352,6 +352,36 @@ export function seedV7(): DatabaseState {
     created_at: nowISO(),
   });
 
+  // Sample Attendance with Photos
+  const makeSamplePhoto = (bg: string, time: string) =>
+    `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="${bg}"/><circle cx="100" cy="75" r="42" fill="%23ffffff" opacity="0.95"/><circle cx="100" cy="65" r="20" fill="${bg}"/><path d="M62 135 C62 105 138 105 138 135 Z" fill="${bg}"/><rect y="160" width="200" height="40" fill="rgba(0,0,0,0.5)"/><text x="100" y="186" font-family="sans-serif" font-size="14" font-weight="bold" fill="%23ffffff" text-anchor="middle">Selfie ${time}</text></svg>`;
+
+  if (d.karyawan.length >= 2) {
+    const todayStr = today();
+    d.absensi.push({
+      id: 'abs_sample_1',
+      karyawan_id: d.karyawan[0].id,
+      karyawan_nama: d.karyawan[0].nama,
+      tanggal: todayStr,
+      jam_masuk: '07:55',
+      jam_keluar: '16:05',
+      status: 'hadir',
+      foto_masuk: makeSamplePhoto('%2300C9A7', '07:55'),
+      foto_keluar: makeSamplePhoto('%2300A88E', '16:05'),
+      keterangan: 'Presensi selfie terverifikasi sistem',
+    });
+    d.absensi.push({
+      id: 'abs_sample_2',
+      karyawan_id: d.karyawan[1].id,
+      karyawan_nama: d.karyawan[1].nama,
+      tanggal: todayStr,
+      jam_masuk: '08:02',
+      status: 'hadir',
+      foto_masuk: makeSamplePhoto('%232563EB', '08:02'),
+      keterangan: 'Presensi masuk selfie terverifikasi',
+    });
+  }
+
   // Sample Transactions
   for (let i = 9; i >= 0; i--) {
     const dt = new Date();
