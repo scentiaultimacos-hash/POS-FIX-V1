@@ -1,0 +1,9 @@
+{
+  "name": "Parfumku POS",
+  "description": "Aplikasi Kasir (POS) & Manajemen Retail Toko Parfum v7.0 lengkap dengan inventori, stok opname, shift, absensi kamera, payroll, CRM pelanggan, poin loyalty, laporan keuangan, dan barcode designer.",
+  "version": "7.0.0",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

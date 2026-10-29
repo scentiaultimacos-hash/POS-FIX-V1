@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+:root {
+  --primary: #00C9A7;
+  --primary-dark: #00A88E;
+  --primary-light: #4ADE80;
+  --primary-hover: #00B894;
+  --primary-soft: #E6FAF5;
+  --bg-app: #F5F7FA;
+  --bg-card: #FFFFFF;
+  --border: #E5E7EB;
+  --text-primary: #1F2937;
+  --text-muted: #6B7280;
+}
+
+.dark {
+  --primary: #00C9A7;
+  --primary-dark: #00A88E;
+  --primary-light: #4ADE80;
+  --primary-hover: #00B894;
+  --primary-soft: #064e3b;
+  --bg-app: #0F172A;
+  --bg-card: #1E293B;
+  --border: #334155;
+  --text-primary: #F1F5F9;
+  --text-muted: #94A3B8;
+}
+
+* {
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--bg-app);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+.dark body {
+  background: #0F172A;
+  color: #F1F5F9;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes slideBottom {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.animate-slide-down { animation: slideDown 0.2s ease-out; }
+.animate-slide-up { animation: slideUp 0.25s ease-out; }
+.animate-slide-bottom { animation: slideBottom 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
+.animate-shake { animation: shake 0.3s ease-out; }
+
+.modal-backdrop {
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.smooth {
+  transition: all 0.15s ease;
+}
+
+.touch-target {
+  min-height: 36px;
+}
+@media (max-width: 767px) {
+  .touch-target {
+    min-height: 44px;
+  }
+}
+
+#cameraVideo, #barcodeVideo {
+  transform: scaleX(-1);
+}
+
+.bottom-sheet {
+  border-radius: 20px 20px 0 0;
+  max-height: 85vh;
+}
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: #CBD5E1;
+  margin: 8px auto;
+}
+
+.product-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.product-card:active {
+  transform: scale(0.97);
+}
+
+.num-key {
+  padding: 14px 0;
+  border-radius: 10px;
+  background: #F1F5F9;
+  font-size: 20px;
+  font-weight: 600;
+  user-select: none;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+.dark .num-key {
+  background: #334155;
+  color: #F1F5F9;
+}
+.num-key:active {
+  background: var(--primary);
+  color: white;
+}
