@@ -37,6 +37,7 @@ import {
 import {
   uploadStateToSupabase,
   downloadStateFromSupabase,
+  SUPABASE_SETUP_SQL,
 } from '../services/supabase';
 
 export const MasterPage: React.FC = () => {
@@ -627,20 +628,7 @@ export const MasterPage: React.FC = () => {
   const [isTestingCloud, setIsTestingCloud] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
-  const sqlSetupScript = `-- Skrip SQL Supabase untuk Parfumku POS v7.0
-CREATE TABLE IF NOT EXISTS public.app_state (
-  id TEXT PRIMARY KEY,
-  data JSONB NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Aktifkan Realtime Replication untuk tabel app_state
-ALTER PUBLICATION supabase_realtime ADD TABLE public.app_state;
-
--- Policy agar aplikasi dapat membaca dan menulis state
-ALTER TABLE public.app_state ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public read state" ON public.app_state FOR SELECT USING (true);
-CREATE POLICY "Public insert/update state" ON public.app_state FOR ALL USING (true);`;
+  const sqlSetupScript = SUPABASE_SETUP_SQL;
 
   const handleCopySql = () => {
     navigator.clipboard.writeText(sqlSetupScript);
@@ -1459,6 +1447,44 @@ CREATE POLICY "Public insert/update state" ON public.app_state FOR ALL USING (tr
               <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
                 🟢 Aktif Realtime
               </span>
+            </div>
+
+            {/* Sync Mode Toggle */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <div>
+                <div className="font-bold text-xs text-slate-800 dark:text-slate-100">
+                  Mode Sinkronisasi Cloud Otomatis
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  {db.settings?.auto_cloud_sync !== false
+                    ? 'Otomatis (Lokal disimpan instan, awan disinkronkan tanpa me-refresh)'
+                    : 'Manual (Hanya dicadangkan saat menekan tombol Cadangkan)'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const current = db.settings?.auto_cloud_sync !== false;
+                  updateDb((prev) => ({
+                    ...prev,
+                    settings: {
+                      ...(prev.settings || prev.master),
+                      auto_cloud_sync: !current,
+                    } as any,
+                  }));
+                  showToast(
+                    !current ? '🟢 Mode Auto-Sync Cloud diaktifkan' : '⏸️ Mode Auto-Sync dinonaktifkan (Manual)',
+                    'info'
+                  );
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  db.settings?.auto_cloud_sync !== false
+                    ? 'bg-emerald-500 text-white shadow-xs'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                {db.settings?.auto_cloud_sync !== false ? '🟢 Otomatis' : '⚪ Manual'}
+              </button>
             </div>
 
             <div className="space-y-3">

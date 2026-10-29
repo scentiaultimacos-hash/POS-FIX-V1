@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { usePOS } from '../context/POSContext';
 import { Database, AlertTriangle, Trash2, Download, RefreshCw, HardDrive, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { seedV7 } from '../utils/seed';
+import { DB_KEY } from '../utils/constants';
 
 export const DatabasePage: React.FC = () => {
   const { db, setDb, addNotification, openPinModal } = usePOS();
@@ -83,7 +84,7 @@ export const DatabasePage: React.FC = () => {
     openPinModal('KONFIRMASI RESET PABRIK: Hapus seluruh data & kembalikan ke default?', () => {
       const initial = seedV7();
       setDb(initial);
-      localStorage.setItem('parfumku_pos_v7', JSON.stringify(initial));
+      localStorage.setItem(DB_KEY, JSON.stringify(initial));
       addNotification('Sistem berhasil di-reset ke kondisi awal pabrik', 'info');
     });
   };

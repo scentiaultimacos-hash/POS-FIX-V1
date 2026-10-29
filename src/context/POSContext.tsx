@@ -27,6 +27,7 @@ import {
   uploadStateToSupabase,
   downloadStateFromSupabase,
   subscribeToSupabaseRealtime,
+  CLIENT_SESSION_ID,
 } from '../services/supabase';
 
 export interface ToastMessage {
@@ -241,18 +242,32 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cartVoucherDiskon, setCartVoucherDiskon] = useState<number>(0);
   const [cartManualDiskon, setCartManualDiskon] = useState<number>(0);
 
-  // Sync DB to localStorage
+  // Track local edit timestamp to avoid overwriting newer local edits with stale cloud snapshots
+  const lastLocalEditTimeRef = useRef<number>(0);
+
+  // Sync DB to localStorage immediately on every change
   const updateDb = useCallback((updater: (prev: DatabaseState) => DatabaseState) => {
+    lastLocalEditTimeRef.current = Date.now();
     setDb((prev) => {
       const updated = updater(prev);
       try {
         localStorage.setItem(DB_KEY, JSON.stringify(updated));
+        localStorage.setItem('pos_last_modified', String(Date.now()));
       } catch (err) {
         console.error('Storage full or error', err);
       }
       return updated;
     });
   }, []);
+
+  // SetDb wrapper to guarantee that any external caller also persists to localStorage
+  const setDbWrapper = useCallback((updater: DatabaseState | ((prev: DatabaseState) => DatabaseState)) => {
+    if (typeof updater === 'function') {
+      updateDb(updater as (prev: DatabaseState) => DatabaseState);
+    } else {
+      updateDb(() => updater);
+    }
+  }, [updateDb]);
 
   // Cloud Sync State
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'needs_table' | 'error'>('synced');
@@ -277,10 +292,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [db]);
 
-  // Debounced auto-sync whenever db changes
+  // Debounced auto-sync: only runs when idle for 2500ms and not disabled
   useEffect(() => {
     if (isRemoteSyncRef.current) {
       isRemoteSyncRef.current = false;
+      return;
+    }
+    if (db.settings?.auto_cloud_sync === false) {
       return;
     }
     if (!navigator.onLine) {
@@ -300,32 +318,66 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         setCloudSyncStatus('error');
       }
-    }, 1200);
+    }, 2500);
 
     return () => {
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
   }, [db]);
 
-  // Initial cloud fetch and realtime subscription
+  // Initial cloud fetch and realtime subscription with echo suppression
   useEffect(() => {
-    // 1. Initial connection check & pull
+    const localModified = Number(localStorage.getItem('pos_last_modified') || 0);
+
+    // 1. Initial connection check & pull ONLY if local is unedited or cloud is confirmed newer
     downloadStateFromSupabase().then((res) => {
       if (res.success && res.data) {
-        isRemoteSyncRef.current = true;
-        setDb(res.data);
-        setCloudSyncStatus('synced');
-        if (res.updatedAt) setLastCloudSyncTime(res.updatedAt);
+        // Guard: if user has already made local edits in this active session, do not overwrite!
+        if (lastLocalEditTimeRef.current > 0) {
+          return;
+        }
+
+        const cloudTimestamp = res.clientTimestamp || (res.updatedAt ? new Date(res.updatedAt).getTime() : 0);
+
+        if (cloudTimestamp > localModified) {
+          isRemoteSyncRef.current = true;
+          const normalized = normalizeDb(res.data);
+          setDb(normalized);
+          try {
+            localStorage.setItem(DB_KEY, JSON.stringify(normalized));
+            localStorage.setItem('pos_last_modified', String(cloudTimestamp));
+          } catch (e) {}
+          setCloudSyncStatus('synced');
+          if (res.updatedAt) setLastCloudSyncTime(res.updatedAt);
+        } else if (localModified > 0 && cloudTimestamp < localModified) {
+          // Local data is newer than cloud: sync local up to cloud
+          triggerCloudSync();
+        }
       }
     });
 
-    // 2. Realtime listener across devices
-    const unsubscribe = subscribeToSupabaseRealtime((incomingDb, updatedAt) => {
+    // 2. Realtime listener across devices (Echo-suppressed: never reacts to own updates)
+    const unsubscribe = subscribeToSupabaseRealtime((incomingDb, updatedAt, senderClientId, clientTimestamp) => {
+      // Echo suppression: Ignore if originated from this browser tab
+      if (senderClientId && senderClientId === CLIENT_SESSION_ID) {
+        return;
+      }
+
+      // Ignore if local edits are newer than incoming cloud timestamp
+      if (clientTimestamp && clientTimestamp <= lastLocalEditTimeRef.current) {
+        return;
+      }
+
       isRemoteSyncRef.current = true;
-      setDb(incomingDb);
+      const normalized = normalizeDb(incomingDb);
+      setDb(normalized);
+      try {
+        localStorage.setItem(DB_KEY, JSON.stringify(normalized));
+        localStorage.setItem('pos_last_modified', String(Date.now()));
+      } catch (e) {}
       setCloudSyncStatus('synced');
       setLastCloudSyncTime(updatedAt);
-      showToast('⚡ Data diperbarui dari cloud secara realtime', 'info', 2000);
+      showToast('⚡ Data diperbarui dari perangkat lain secara realtime', 'info', 2000);
     });
 
     // 3. Online/offline listener
@@ -770,7 +822,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markNotificationsRead,
         currentUser: user,
         hasPermission: canAccess,
-        setDb,
+        setDb: setDbWrapper,
         addNotification: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => showToast(msg, type),
         openPinModal: (msg: string, onApprove: (approver?: any) => void) => requestPinApproval(msg, (u) => onApprove(u)),
         cloudSyncStatus,
