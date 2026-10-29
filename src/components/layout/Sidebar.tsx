@@ -78,15 +78,24 @@ const iconMap: Record<string, React.ElementType> = {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { currentPage, setCurrentPage, canAccess, db, logout } = usePOS();
-  // Open groups state (default: open all groups)
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    Utama: true,
-    Laporan: true,
-    'Produk & Stok': true,
-    Pelanggan: true,
-    Karyawan: true,
-    Sistem: true,
+
+  // Helper to find which group name contains the pageId
+  const getGroupNameForPage = (pageId: string) => {
+    const found = PAGE_GROUPS.find((g) => g.pages.some((p) => p.id === pageId));
+    return found ? found.name : 'Utama';
+  };
+
+  // Only open the group containing the active page; others remain closed
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const activeGroup = getGroupNameForPage(currentPage);
+    return { [activeGroup]: true };
   });
+
+  // Whenever currentPage changes, auto-accordion to only open that active group
+  React.useEffect(() => {
+    const activeGroup = getGroupNameForPage(currentPage);
+    setOpenGroups({ [activeGroup]: true });
+  }, [currentPage]);
 
   const toggleGroup = (name: string) => {
     setOpenGroups((prev) => ({ ...prev, [name]: !prev[name] }));
@@ -106,7 +115,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
       {/* Aside container */}
       <aside
-        className={`fixed top-[60px] left-0 bottom-0 w-[240px] bg-gradient-to-b from-[#00C9A7] to-[#00A88E] text-white z-40 flex flex-col transition-transform duration-200 ease-in-out ${
+        style={{ background: 'linear-gradient(180deg, var(--primary) 0%, var(--primary-dark) 100%)' }}
+        className={`fixed top-[60px] left-0 bottom-0 w-[240px] text-white z-40 flex flex-col transition-transform duration-200 ease-in-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         } shadow-lg md:shadow-none`}
       >

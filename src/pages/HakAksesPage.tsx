@@ -4,9 +4,9 @@ import { User } from '../types';
 import { Shield, Plus, Edit2, Trash2, Key, Check, X } from 'lucide-react';
 import { hashPassword } from '../utils/constants';
 
-type RoleType = 'owner' | 'manager' | 'kasir' | 'gudang';
+type RoleType = string;
 
-const ALL_ROLES: RoleType[] = ['owner', 'manager', 'kasir', 'gudang'];
+const DEFAULT_ROLES = ['owner', 'manager', 'kasir', 'gudang'];
 
 const ALL_PERMISSIONS: { key: string; label: string; group: string }[] = [
   { key: 'page_dashboard', label: 'Akses Dashboard', group: 'Menu' },
@@ -43,6 +43,10 @@ const ALL_PERMISSIONS: { key: string; label: string; group: string }[] = [
 export const HakAksesPage: React.FC = () => {
   const { db, setDb, currentUser, addNotification, openPinModal } = usePOS();
   const [activeTab, setActiveTab] = useState<'users' | 'matrix'>('users');
+
+  const availableRoles = (db.roles && db.roles.length > 0)
+    ? db.roles
+    : DEFAULT_ROLES.map(r => ({ id: r, nama: r, label: r.toUpperCase() }));
 
   // User form modal
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -297,17 +301,17 @@ export const HakAksesPage: React.FC = () => {
               <p className="text-xs text-slate-500">Centang fitur yang diizinkan untuk setiap peran pengguna</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {ALL_ROLES.map(r => (
+              {availableRoles.map(r => (
                 <button
-                  key={r}
-                  onClick={() => setMatrixRole(r)}
+                  key={r.nama}
+                  onClick={() => setMatrixRole(r.nama)}
                   className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all ${
-                    matrixRole === r
+                    matrixRole === r.nama
                       ? 'bg-primary text-white shadow-md'
                       : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                   }`}
                 >
-                  {r}
+                  {r.label || r.nama}
                 </button>
               ))}
             </div>
@@ -398,13 +402,14 @@ export const HakAksesPage: React.FC = () => {
                   <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Role</label>
                   <select
                     value={role}
-                    onChange={e => setRole(e.target.value as RoleType)}
+                    onChange={e => setRole(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900 text-xs font-bold"
                   >
-                    <option value="kasir">Kasir</option>
-                    <option value="manager">Manager</option>
-                    <option value="gudang">Gudang</option>
-                    <option value="owner">Owner</option>
+                    {availableRoles.map(r => (
+                      <option key={r.nama} value={r.nama}>
+                        {r.label || r.nama}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

@@ -20,6 +20,7 @@ import {
   uuid,
   verifyPassword,
   playSound,
+  applyThemeColor,
 } from '../utils/constants';
 import { seedV7 } from '../utils/seed';
 import {
@@ -56,6 +57,8 @@ interface POSContextType {
   setCurrentPage: (page: string) => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+  themeColor: string;
+  setThemeColor: (color: string) => void;
   activeShift: ShiftSession | null;
   bukaShift: (modalAwal: number) => void;
   tutupShift: (uangFisik: number, catatan?: string) => void;
@@ -180,6 +183,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem(THEME_KEY);
     return saved === 'dark' ? 'dark' : 'light';
+  });
+  const [themeColor, setThemeColorState] = useState<string>(() => {
+    return localStorage.getItem(THEME_COLOR_KEY) || 'emerald';
   });
 
   // Toasts
@@ -471,43 +477,60 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const canAccess = useCallback((pageId: string): boolean => {
     if (!user) return false;
     if (user.role === 'owner') return true;
-    const perms = (user.permissions && user.permissions.length > 0 ? user.permissions : (ROLE_PERMISSIONS[user.role] || [])).map((p) =>
+    const rolePerms = db.role_permissions?.[user.role] || ROLE_PERMISSIONS[user.role] || [];
+    const perms = (user.permissions && user.permissions.length > 0 ? user.permissions : rolePerms).map((p) =>
       p.toLowerCase().replace(/^page_/, '').replace(/_/g, '-')
     );
     if (perms.includes('*')) return true;
     const cleanId = pageId.toLowerCase().replace(/^page_/, '').replace(/_/g, '-');
     return perms.includes(cleanId);
-  }, [user]);
+  }, [user, db.role_permissions]);
 
   const canAction = useCallback((actionKey: string): boolean => {
     if (!user) return false;
     if (user.role === 'owner' || (user.permissions && user.permissions.includes('*'))) return true;
-    const allowed = (ROLE_PERMISSIONS[user.role] || []);
+    const rolePerms = db.role_permissions?.[user.role] || ROLE_PERMISSIONS[user.role] || [];
+    const allowed = (user.permissions && user.permissions.length > 0 ? user.permissions : rolePerms);
     if (actionKey.startsWith('produk.') && allowed.includes('produk')) return true;
     if (actionKey.startsWith('pelanggan.') && allowed.includes('pelanggan')) return true;
     return false;
-  }, [user]);
+  }, [user, db.role_permissions]);
 
   // Theme
   const toggleTheme = useCallback(() => {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     localStorage.setItem(THEME_KEY, next);
+    applyThemeColor(themeColor, next === 'dark');
     if (next === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
     showToast(next === 'dark' ? '🌙 Dark Mode aktif' : '☀️ Light Mode aktif', 'info', 1500);
-  }, [theme, showToast]);
+  }, [theme, themeColor, showToast]);
+
+  const setThemeColor = useCallback((colorId: string) => {
+    setThemeColorState(colorId);
+    applyThemeColor(colorId, theme === 'dark');
+    updateDb((prev) => ({
+      ...prev,
+      master: {
+        ...prev.master,
+        theme_color: colorId,
+      },
+    }));
+    showToast('🎨 Tema warna berhasil diubah', 'success', 2000);
+  }, [theme, updateDb, showToast]);
 
   useEffect(() => {
+    applyThemeColor(themeColor, theme === 'dark');
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-  }, [theme]);
+  }, [theme, themeColor]);
 
   // Cart operations
   const addToCart = useCallback((produkId: string, qty = 1): boolean => {
@@ -704,6 +727,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentPage,
         theme,
         toggleTheme,
+        themeColor,
+        setThemeColor,
         activeShift,
         bukaShift,
         tutupShift,

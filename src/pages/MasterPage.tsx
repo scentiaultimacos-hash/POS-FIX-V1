@@ -1,514 +1,1858 @@
 import React, { useState } from 'react';
 import { usePOS } from '../context/POSContext';
-import { MasterSettings } from '../types';
-import { Store, Receipt, Percent, CreditCard, Cloud, Save, Upload, RotateCcw } from 'lucide-react';
-
-interface FormSettings {
-  nama_toko: string;
-  alamat: string;
-  telepon: string;
-  email: string;
-  website: string;
-  logo_url: string;
-  footer_struk: string;
-  printer_mode: string;
-  pajak_persen: number;
-  biaya_layanan_persen: number;
-  poin_per_rupiah: number;
-  nilai_per_poin: number;
-  qris_merchant_name: string;
-  bank_name: string;
-  bank_account_number: string;
-  bank_account_holder: string;
-  supabase_url: string;
-  supabase_anon_key: string;
-}
+import { PaymentMethodConfig } from '../types';
+import {
+  THEME_PRESETS,
+  applyThemeColor,
+  uuid,
+  nowISO,
+} from '../utils/constants';
+import {
+  Store,
+  Receipt,
+  Layers,
+  Sparkles,
+  ShieldAlert,
+  CreditCard,
+  Palette,
+  Cloud,
+  Plus,
+  Trash2,
+  Edit2,
+  Save,
+  Check,
+  X,
+  Upload,
+  RefreshCw,
+  Copy,
+  CheckCheck,
+  Droplet,
+  Beaker,
+  Shield,
+  HelpCircle,
+  Eye,
+  Sun,
+  Moon,
+} from 'lucide-react';
+import {
+  uploadStateToSupabase,
+  downloadStateFromSupabase,
+} from '../services/supabase';
 
 export const MasterPage: React.FC = () => {
-  const { db, setDb, addNotification } = usePOS();
-  const [activeTab, setActiveTab] = useState<'profil' | 'struk' | 'pajak' | 'bayar' | 'cloud'>('profil');
+  const {
+    db,
+    updateDb,
+    showToast,
+    showConfirm,
+    theme,
+    toggleTheme,
+    themeColor,
+    setThemeColor,
+    logActivity,
+  } = usePOS();
 
-  const [form, setForm] = useState<FormSettings>(() => {
-    const s = (db.settings || {}) as any;
-    const m = (db.master || {}) as any;
-    return {
-      nama_toko: s.nama_toko || m.toko?.nama || 'PARFUMKU STORE',
-      alamat: s.alamat || m.toko?.alamat || 'Jl. Malioboro No. 45, Yogyakarta',
-      telepon: s.telepon || m.toko?.telepon || '0812-3456-7890',
-      email: s.email || 'info@parfumku.id',
-      website: s.website || 'www.parfumku.id',
-      logo_url: s.logo_url || m.logo || '',
-      footer_struk: s.footer_struk || m.toko?.footer || 'Terima Kasih Atas Kunjungan Anda',
-      printer_mode: s.printer_mode || (m.struk?.kertas === '80' ? '80mm' : '58mm'),
-      pajak_persen: s.pajak_persen ?? m.pajak?.persen ?? 0,
-      biaya_layanan_persen: s.biaya_layanan_persen ?? 0,
-      poin_per_rupiah: s.poin_per_rupiah ?? m.poin?.rate ?? 10000,
-      nilai_per_poin: s.nilai_per_poin ?? 100,
-      qris_merchant_name: s.qris_merchant_name || 'PARFUMKU STORE',
-      bank_name: s.bank_name || 'BCA',
-      bank_account_number: s.bank_account_number || '123-456-7890',
-      bank_account_holder: s.bank_account_holder || 'PT Parfumku Indonesia',
-      supabase_url: s.supabase_url || '',
-      supabase_anon_key: s.supabase_anon_key || '',
-    };
+  const [activeTab, setActiveTab] = useState<
+    'profil' | 'katalog' | 'roles' | 'bayar' | 'tema' | 'cloud'
+  >('profil');
+
+  // -------------------------------------------------------------
+  // TAB 1: PROFIL TOKO & STRUK
+  // -------------------------------------------------------------
+  const [storeForm, setStoreForm] = useState({
+    nama: db.master?.toko?.nama || 'PARFUMKU STORE',
+    alamat: db.master?.toko?.alamat || 'Jl. Malioboro No. 45, Yogyakarta',
+    telepon: db.master?.toko?.telepon || '0812-3456-7890',
+    email: db.settings?.email || 'info@parfumku.id',
+    website: db.settings?.website || 'www.parfumku.id',
+    footer: db.master?.toko?.footer || 'Terima kasih atas kunjungan Anda! 🌸',
+    logo: db.master?.logo || '',
+    kertas: (db.master?.struk?.kertas || '58') as '58' | '80',
+    mode: (db.master?.struk?.mode || 'thermal') as 'thermal' | 'wa' | 'both',
+    autoPrint: db.master?.struk?.autoPrint ?? true,
+    komisiRate: db.master?.komisi?.rate ?? 2,
   });
 
-  const handleChange = (field: keyof FormSettings, value: any) => {
-    setForm(prev => ({ ...prev, [field]: value }));
+  const handleSaveStore = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateDb((prev) => ({
+      ...prev,
+      master: {
+        ...prev.master,
+        logo: storeForm.logo,
+        toko: {
+          nama: storeForm.nama,
+          alamat: storeForm.alamat,
+          telepon: storeForm.telepon,
+          footer: storeForm.footer,
+        },
+        struk: {
+          kertas: storeForm.kertas as '58' | '80',
+          mode: storeForm.mode as any,
+          autoPrint: storeForm.autoPrint,
+        },
+        komisi: {
+          rate: Number(storeForm.komisiRate),
+        },
+      },
+      settings: {
+        ...(prev.settings || {}),
+        nama_toko: storeForm.nama,
+        alamat: storeForm.alamat,
+        telepon: storeForm.telepon,
+        email: storeForm.email,
+        website: storeForm.website,
+        footer_struk: storeForm.footer,
+        printer_mode: storeForm.kertas === '80' ? '80mm' : '58mm',
+      } as any,
+    }));
+    logActivity('Perbarui informasi toko & struk', 'Master');
+    showToast('💾 Profil toko & struk berhasil disimpan', 'success');
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = () => {
-        handleChange('logo_url', reader.result as string);
-        addNotification('Logo toko berhasil dimuat', 'info');
+        const base64 = reader.result as string;
+        setStoreForm((prev) => ({ ...prev, logo: base64 }));
+        showToast('Logo berhasil dimuat', 'info');
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    setDb(prev => ({
-      ...prev,
-      settings: {
-        ...(prev.settings || {}),
-        ...form,
-        toko: {
-          nama: form.nama_toko,
-          telepon: form.telepon,
-          alamat: form.alamat,
-          footer: form.footer_struk,
-        },
-      } as any,
-      master: {
-        ...prev.master,
-        logo: form.logo_url || prev.master.logo,
-        toko: {
-          ...prev.master.toko,
-          nama: form.nama_toko,
-          alamat: form.alamat,
-          telepon: form.telepon,
-          footer: form.footer_struk,
-        },
-        pajak: {
-          ...prev.master.pajak,
-          persen: form.pajak_persen,
-          aktif: form.pajak_persen > 0,
-        },
-        struk: {
-          ...prev.master.struk,
-          kertas: form.printer_mode === '80mm' ? '80' : '58',
-        },
-      }
-    }));
-    addNotification('Pengaturan Toko berhasil disimpan', 'success');
+  // -------------------------------------------------------------
+  // TAB 2: MASTER KATALOG (Kategori, Aroma, Ukuran)
+  // -------------------------------------------------------------
+  const [katalogSubTab, setKatalogSubTab] = useState<'kategori' | 'aroma' | 'ukuran'>('kategori');
+
+  // Kategori Modal
+  const [katModalOpen, setKatModalOpen] = useState(false);
+  const [katEditId, setKatEditId] = useState<string | null>(null);
+  const [katNama, setKatNama] = useState('');
+  const [katIcon, setKatIcon] = useState('🌸');
+
+  const openAddKat = () => {
+    setKatEditId(null);
+    setKatNama('');
+    setKatIcon('🌸');
+    setKatModalOpen(true);
   };
 
-  const handleResetDefaults = () => {
-    if (window.confirm('Kembalikan semua pengaturan ke nilai default?')) {
-      const defaults: FormSettings = {
-        nama_toko: 'PARFUMKU STORE',
-        alamat: 'Jl. Malioboro No. 45, Yogyakarta',
-        telepon: '0812-3456-7890',
-        email: 'info@parfumku.id',
-        website: 'www.parfumku.id',
-        logo_url: '',
-        footer_struk: 'Terima Kasih Atas Kunjungan Anda\nBarang yang sudah dibeli tidak dapat ditukar',
-        pajak_persen: 0,
-        biaya_layanan_persen: 0,
-        poin_per_rupiah: 10000,
-        nilai_per_poin: 100,
-        printer_mode: '58mm',
-        qris_merchant_name: 'PARFUMKU STORE',
-        bank_name: 'BCA',
-        bank_account_number: '123-456-7890',
-        bank_account_holder: 'PT Parfumku Indonesia',
-        supabase_url: '',
-        supabase_anon_key: '',
-      };
-      setForm(defaults);
-      setDb(prev => ({
+  const openEditKat = (kat: { id: string; nama: string; icon: string }) => {
+    setKatEditId(kat.id);
+    setKatNama(kat.nama);
+    setKatIcon(kat.icon || '🌸');
+    setKatModalOpen(true);
+  };
+
+  const handleSaveKat = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!katNama.trim()) {
+      showToast('Nama kategori wajib diisi', 'error');
+      return;
+    }
+    updateDb((prev) => {
+      const currentList = prev.kategori || [];
+      if (katEditId) {
+        return {
+          ...prev,
+          kategori: currentList.map((k) =>
+            k.id === katEditId ? { ...k, nama: katNama.trim(), icon: katIcon.trim() } : k
+          ),
+        };
+      } else {
+        const newKat = {
+          id: 'kat_' + Date.now().toString(36),
+          nama: katNama.trim(),
+          icon: katIcon.trim() || '🌸',
+        };
+        return {
+          ...prev,
+          kategori: [...currentList, newKat],
+        };
+      }
+    });
+    setKatModalOpen(false);
+    logActivity(`${katEditId ? 'Edit' : 'Tambah'} kategori: ${katNama}`, 'Master Katalog');
+    showToast(`✅ Kategori ${katNama} berhasil disimpan`, 'success');
+  };
+
+  const handleDeleteKat = (id: string, nama: string) => {
+    showConfirm(
+      'Hapus Kategori',
+      `Yakin ingin menghapus kategori "${nama}" dari database?`,
+      () => {
+        updateDb((prev) => ({
+          ...prev,
+          kategori: (prev.kategori || []).filter((k) => k.id !== id),
+        }));
+        logActivity(`Hapus kategori ${nama}`, 'Master Katalog');
+        showToast(`Kategori ${nama} dihapus`, 'info');
+      }
+    );
+  };
+
+  // Aroma Modal
+  const [aromaModalOpen, setAromaModalOpen] = useState(false);
+  const [aromaEditId, setAromaEditId] = useState<string | null>(null);
+  const [aromaNama, setAromaNama] = useState('');
+  const [aromaKode, setAromaKode] = useState('');
+
+  const openAddAroma = () => {
+    setAromaEditId(null);
+    setAromaNama('');
+    setAromaKode('');
+    setAromaModalOpen(true);
+  };
+
+  const openEditAroma = (a: { id: string; nama: string; kode: string }) => {
+    setAromaEditId(a.id);
+    setAromaNama(a.nama);
+    setAromaKode(a.kode);
+    setAromaModalOpen(true);
+  };
+
+  const handleSaveAroma = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aromaNama.trim()) {
+      showToast('Nama aroma wajib diisi', 'error');
+      return;
+    }
+    const code =
+      aromaKode.trim().toUpperCase() ||
+      aromaNama
+        .replace(/[^A-Za-z]/g, '')
+        .slice(0, 3)
+        .toUpperCase();
+
+    updateDb((prev) => {
+      const currentList = prev.aroma || [];
+      if (aromaEditId) {
+        return {
+          ...prev,
+          aroma: currentList.map((a) =>
+            a.id === aromaEditId ? { ...a, nama: aromaNama.trim(), kode: code } : a
+          ),
+        };
+      } else {
+        const newAroma = {
+          id: 'arm_' + Date.now().toString(36),
+          nama: aromaNama.trim(),
+          kode: code,
+        };
+        return {
+          ...prev,
+          aroma: [...currentList, newAroma],
+        };
+      }
+    });
+    setAromaModalOpen(false);
+    logActivity(`${aromaEditId ? 'Edit' : 'Tambah'} aroma: ${aromaNama}`, 'Master Katalog');
+    showToast(`✅ Aroma ${aromaNama} (${code}) berhasil disimpan`, 'success');
+  };
+
+  const handleDeleteAroma = (id: string, nama: string) => {
+    showConfirm(
+      'Hapus Aroma',
+      `Yakin ingin menghapus varian aroma "${nama}" dari database?`,
+      () => {
+        updateDb((prev) => ({
+          ...prev,
+          aroma: (prev.aroma || []).filter((a) => a.id !== id),
+        }));
+        logActivity(`Hapus aroma ${nama}`, 'Master Katalog');
+        showToast(`Aroma ${nama} dihapus`, 'info');
+      }
+    );
+  };
+
+  // Ukuran Modal
+  const [ukuranModalOpen, setUkuranModalOpen] = useState(false);
+  const [ukuranEditId, setUkuranEditId] = useState<string | null>(null);
+  const [ukuranNama, setUkuranNama] = useState('');
+  const [ukuranMl, setUkuranMl] = useState(30);
+
+  const openAddUkuran = () => {
+    setUkuranEditId(null);
+    setUkuranNama('30ml');
+    setUkuranMl(30);
+    setUkuranModalOpen(true);
+  };
+
+  const openEditUkuran = (u: { id: string; nama: string; ml: number }) => {
+    setUkuranEditId(u.id);
+    setUkuranNama(u.nama);
+    setUkuranMl(u.ml);
+    setUkuranModalOpen(true);
+  };
+
+  const handleSaveUkuran = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ukuranNama.trim()) {
+      showToast('Label ukuran wajib diisi', 'error');
+      return;
+    }
+    updateDb((prev) => {
+      const currentList = prev.ukuran || [];
+      if (ukuranEditId) {
+        return {
+          ...prev,
+          ukuran: currentList.map((u) =>
+            u.id === ukuranEditId ? { ...u, nama: ukuranNama.trim(), ml: Number(ukuranMl) } : u
+          ),
+        };
+      } else {
+        const newUkuran = {
+          id: 'ukr_' + Date.now().toString(36),
+          nama: ukuranNama.trim(),
+          ml: Number(ukuranMl),
+        };
+        return {
+          ...prev,
+          ukuran: [...currentList, newUkuran],
+        };
+      }
+    });
+    setUkuranModalOpen(false);
+    logActivity(`${ukuranEditId ? 'Edit' : 'Tambah'} ukuran: ${ukuranNama}`, 'Master Katalog');
+    showToast(`✅ Ukuran ${ukuranNama} berhasil disimpan`, 'success');
+  };
+
+  const handleDeleteUkuran = (id: string, nama: string) => {
+    showConfirm(
+      'Hapus Ukuran Botol',
+      `Yakin ingin menghapus ukuran "${nama}" dari database?`,
+      () => {
+        updateDb((prev) => ({
+          ...prev,
+          ukuran: (prev.ukuran || []).filter((u) => u.id !== id),
+        }));
+        logActivity(`Hapus ukuran ${nama}`, 'Master Katalog');
+        showToast(`Ukuran ${nama} dihapus`, 'info');
+      }
+    );
+  };
+
+  // -------------------------------------------------------------
+  // TAB 3: MASTER ROLE & JABATAN (Custom Roles & Permissions)
+  // -------------------------------------------------------------
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [roleEditId, setRoleEditId] = useState<string | null>(null);
+  const [roleNamaSlug, setRoleNamaSlug] = useState('');
+  const [roleLabel, setRoleLabel] = useState('');
+  const [roleDeskripsi, setRoleDeskripsi] = useState('');
+  const [roleWarna, setRoleWarna] = useState('bg-blue-100 text-blue-700');
+
+  // Selected role for permission matrix in Master tab
+  const [selectedRoleForPerms, setSelectedRoleForPerms] = useState<string>('kasir');
+
+  const ROLE_COLOR_PRESETS = [
+    { label: 'Blue', val: 'bg-blue-100 text-blue-700' },
+    { label: 'Emerald', val: 'bg-emerald-100 text-emerald-800' },
+    { label: 'Purple', val: 'bg-purple-100 text-purple-700' },
+    { label: 'Amber', val: 'bg-amber-100 text-amber-800' },
+    { label: 'Teal', val: 'bg-teal-100 text-teal-800' },
+    { label: 'Rose', val: 'bg-rose-100 text-rose-700' },
+    { label: 'Indigo', val: 'bg-indigo-100 text-indigo-700' },
+    { label: 'Slate', val: 'bg-slate-200 text-slate-800' },
+  ];
+
+  const ALL_APP_PERMISSIONS = [
+    { id: 'dashboard', label: 'Dashboard & Statistik', category: 'Utama' },
+    { id: 'kasir', label: 'Mesin Kasir (POS)', category: 'Utama' },
+    { id: 'pending', label: 'Pending Order (Hold/Call)', category: 'Utama' },
+    { id: 'redeem', label: 'Redeem Poin Loyalty', category: 'Utama' },
+    { id: 'produk', label: 'Kelola Katalog Produk', category: 'Katalog' },
+    { id: 'inventori', label: 'Bahan Baku & Inventori', category: 'Katalog' },
+    { id: 'opname', label: 'Stock Opname', category: 'Katalog' },
+    { id: 'supplier', label: 'Supplier & Purchase Order', category: 'Katalog' },
+    { id: 'barcode-designer', label: 'Barcode & QR Designer', category: 'Katalog' },
+    { id: 'pelanggan', label: 'Database CRM Pelanggan', category: 'Pelanggan' },
+    { id: 'kasbon', label: 'Buku Catatan Kasbon', category: 'Pelanggan' },
+    { id: 'voucher', label: 'Voucher & Diskon Promo', category: 'Pelanggan' },
+    { id: 'rfm', label: 'Analisis RFM Pelanggan', category: 'Pelanggan' },
+    { id: 'karyawan', label: 'Daftar Karyawan', category: 'SDM' },
+    { id: 'shift-groups', label: 'Grup Shift Karyawan', category: 'SDM' },
+    { id: 'shift-schedule', label: 'Jadwal Roster Shift', category: 'SDM' },
+    { id: 'absensi', label: 'Absensi Selfie & Jam Kerja', category: 'SDM' },
+    { id: 'payroll', label: 'Penggajian / Payroll', category: 'SDM' },
+    { id: 'laporan-karyawan', label: 'Laporan Kinerja Karyawan', category: 'SDM' },
+    { id: 'shift-history', label: 'Riwayat Tutup Shift', category: 'SDM' },
+    { id: 'laporan-penjualan', label: 'Laporan Penjualan', category: 'Laporan' },
+    { id: 'laporan-kasir', label: 'Laporan Per Kasir', category: 'Laporan' },
+    { id: 'laporan-retur', label: 'Laporan Retur', category: 'Laporan' },
+    { id: 'laporan-stok', label: 'Laporan Stok & Mutasi', category: 'Laporan' },
+    { id: 'laporan-keuangan', label: 'Laporan Laba Rugi / Keuangan', category: 'Laporan' },
+    { id: 'hak-akses', label: 'Hak Akses User & Akun', category: 'Sistem' },
+    { id: 'master', label: 'Master Pengaturan Toko', category: 'Sistem' },
+    { id: 'database', label: 'Database Backup & Reset', category: 'Sistem' },
+  ];
+
+  const currentRoleList = db.roles || [];
+
+  const openAddRole = () => {
+    setRoleEditId(null);
+    setRoleNamaSlug('');
+    setRoleLabel('');
+    setRoleDeskripsi('');
+    setRoleWarna('bg-blue-100 text-blue-700');
+    setRoleModalOpen(true);
+  };
+
+  const openEditRole = (r: any) => {
+    setRoleEditId(r.id);
+    setRoleNamaSlug(r.nama);
+    setRoleLabel(r.label);
+    setRoleDeskripsi(r.deskripsi || '');
+    setRoleWarna(r.warna || 'bg-blue-100 text-blue-700');
+    setRoleModalOpen(true);
+  };
+
+  const handleSaveRole = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roleLabel.trim()) {
+      showToast('Nama label role wajib diisi', 'error');
+      return;
+    }
+    const cleanSlug = (roleNamaSlug || roleLabel)
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '_')
+      .replace(/_+/g, '_');
+
+    updateDb((prev) => {
+      const existing = prev.roles || [];
+      if (roleEditId) {
+        return {
+          ...prev,
+          roles: existing.map((r) =>
+            r.id === roleEditId
+              ? {
+                  ...r,
+                  nama: cleanSlug,
+                  label: roleLabel.trim(),
+                  deskripsi: roleDeskripsi.trim(),
+                  warna: roleWarna,
+                }
+              : r
+          ),
+        };
+      } else {
+        const newR = {
+          id: 'role_' + Date.now().toString(36),
+          nama: cleanSlug,
+          label: roleLabel.trim(),
+          deskripsi: roleDeskripsi.trim() || 'Role kustom',
+          warna: roleWarna,
+        };
+        // Also initialize default permissions for this new role
+        const rolePerms = { ...(prev.role_permissions || {}) };
+        if (!rolePerms[cleanSlug]) {
+          rolePerms[cleanSlug] = ['dashboard', 'kasir', 'produk'];
+        }
+        return {
+          ...prev,
+          roles: [...existing, newR],
+          role_permissions: rolePerms,
+        };
+      }
+    });
+    setRoleModalOpen(false);
+    logActivity(`${roleEditId ? 'Edit' : 'Tambah'} role: ${roleLabel}`, 'Master Role');
+    showToast(`✅ Role ${roleLabel} berhasil disimpan`, 'success');
+  };
+
+  const handleDeleteRole = (roleItem: any) => {
+    if (roleItem.nama === 'owner') {
+      showToast('Role "owner" adalah role sistem utama dan tidak dapat dihapus', 'error');
+      return;
+    }
+    showConfirm(
+      'Hapus Role',
+      `Yakin ingin menghapus role "${roleItem.label}"? Karyawan yang memiliki role ini akan dialihkan ke Kasir.`,
+      () => {
+        updateDb((prev) => ({
+          ...prev,
+          roles: (prev.roles || []).filter((r) => r.id !== roleItem.id),
+          karyawan: (prev.karyawan || []).map((k) =>
+            k.role === roleItem.nama ? { ...k, role: 'kasir' } : k
+          ),
+        }));
+        logActivity(`Hapus role ${roleItem.label}`, 'Master Role');
+        showToast(`Role ${roleItem.label} telah dihapus`, 'info');
+      }
+    );
+  };
+
+  // Toggle permission for a role in Master
+  const togglePermissionForRole = (permId: string) => {
+    if (selectedRoleForPerms === 'owner') {
+      showToast('Role Owner selalu memiliki hak akses penuh (*)', 'info');
+      return;
+    }
+    updateDb((prev) => {
+      const perms = { ...(prev.role_permissions || {}) };
+      const current = perms[selectedRoleForPerms] || [];
+      const has = current.includes(permId);
+      const updated = has ? current.filter((p) => p !== permId) : [...current, permId];
+      perms[selectedRoleForPerms] = updated;
+      return {
         ...prev,
-        settings: { ...(prev.settings || {}), ...defaults } as any
-      }));
-      addNotification('Pengaturan dikembalikan ke default', 'info');
+        role_permissions: perms,
+      };
+    });
+    showToast('Hak akses diperbarui', 'info', 1000);
+  };
+
+  // -------------------------------------------------------------
+  // TAB 4: METODE PEMBAYARAN & PAJAK
+  // -------------------------------------------------------------
+  const [payModalOpen, setPayModalOpen] = useState(false);
+  const [payNama, setPayNama] = useState('');
+  const [payIcon, setPayIcon] = useState('💳');
+  const [payRekening, setPayRekening] = useState('');
+
+  const currentPayMethods: PaymentMethodConfig[] = db.master?.pembayaran || [
+    { id: 'cash', nama: 'Tunai (Cash)', icon: '💵', aktif: true, biaya: 0 },
+    { id: 'qris', nama: 'QRIS Dinamis / Statis', icon: '📱', aktif: true, biaya: 0 },
+    { id: 'transfer_bca', nama: 'Transfer BCA', icon: '🏦', aktif: true, biaya: 0 },
+    { id: 'edc_debit', nama: 'Kartu Debit / EDC', icon: '💳', aktif: true, biaya: 0 },
+    { id: 'kasbon', nama: 'Kasbon Member', icon: '📝', aktif: true, biaya: 0 },
+  ];
+
+  const handleTogglePay = (payId: string) => {
+    updateDb((prev) => {
+      const list = prev.master?.pembayaran || currentPayMethods;
+      const updated = list.map((p) => (p.id === payId ? { ...p, aktif: !p.aktif } : p));
+      return {
+        ...prev,
+        master: {
+          ...prev.master,
+          pembayaran: updated,
+        },
+      };
+    });
+    showToast('Status pembayaran diperbarui', 'info', 1000);
+  };
+
+  const handleAddPaymentMethod = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payNama.trim()) {
+      showToast('Nama metode pembayaran wajib diisi', 'error');
+      return;
+    }
+    const newPay: PaymentMethodConfig = {
+      id: 'pay_' + Date.now().toString(36),
+      nama: payNama.trim(),
+      icon: payIcon.trim() || '💳',
+      aktif: true,
+      biaya: 0,
+      bank_account: payRekening.trim(),
+    };
+    updateDb((prev) => ({
+      ...prev,
+      master: {
+        ...prev.master,
+        pembayaran: [...(prev.master?.pembayaran || currentPayMethods), newPay],
+      },
+    }));
+    setPayModalOpen(false);
+    setPayNama('');
+    setPayRekening('');
+    logActivity(`Tambah metode pembayaran: ${payNama}`, 'Master Bayar');
+    showToast(`✅ Metode pembayaran ${payNama} berhasil ditambahkan`, 'success');
+  };
+
+  const handleDeletePayment = (id: string, nama: string) => {
+    showConfirm(
+      'Hapus Metode Pembayaran',
+      `Yakin ingin menghapus metode "${nama}"?`,
+      () => {
+        updateDb((prev) => ({
+          ...prev,
+          master: {
+            ...prev.master,
+            pembayaran: (prev.master?.pembayaran || currentPayMethods).filter((p) => p.id !== id),
+          },
+        }));
+        showToast(`Metode ${nama} dihapus`, 'info');
+      }
+    );
+  };
+
+  // Tax and points form
+  const [taxPersen, setTaxPersen] = useState(db.master?.pajak?.persen ?? 11);
+  const [taxAktif, setTaxAktif] = useState(db.master?.pajak?.aktif ?? true);
+  const [poinRate, setPoinRate] = useState(db.master?.poin?.rate ?? 1000);
+
+  const handleSaveTaxAndPoints = () => {
+    updateDb((prev) => ({
+      ...prev,
+      master: {
+        ...prev.master,
+        pajak: {
+          ...prev.master?.pajak,
+          nama: 'PPN',
+          persen: Number(taxPersen),
+          aktif: taxAktif,
+        },
+        poin: {
+          ...prev.master?.poin,
+          aktif: true,
+          rate: Number(poinRate),
+        },
+      },
+    }));
+    logActivity('Perbarui pajak dan poin', 'Master');
+    showToast('💾 Pajak & pengaturan poin berhasil disimpan', 'success');
+  };
+
+  // -------------------------------------------------------------
+  // TAB 5: TEMA & TAMPILAN
+  // -------------------------------------------------------------
+  const [selectedFont, setSelectedFont] = useState('Inter');
+
+  // -------------------------------------------------------------
+  // TAB 6: CLOUD & SUPABASE
+  // -------------------------------------------------------------
+  const [supabaseUrl, setSupabaseUrl] = useState(
+    db.settings?.supabase_url || 'https://ekzzgbuwqhfifrmkkahj.supabase.co'
+  );
+  const [supabaseKey, setSupabaseKey] = useState(
+    db.settings?.supabase_anon_key ||
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrenpnYnV3cWhmaWZybWtrYWhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwOTE5NjQsImV4cCI6MjEwNzY2Nzk2NH0.teuIXTviBEou3eVHhsQlO3acRLeibfVko6vIT0i0Yc4'
+  );
+  const [isTestingCloud, setIsTestingCloud] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  const sqlSetupScript = `-- Skrip SQL Supabase untuk Parfumku POS v7.0
+CREATE TABLE IF NOT EXISTS public.app_state (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Aktifkan Realtime Replication untuk tabel app_state
+ALTER PUBLICATION supabase_realtime ADD TABLE public.app_state;
+
+-- Policy agar aplikasi dapat membaca dan menulis state
+ALTER TABLE public.app_state ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read state" ON public.app_state FOR SELECT USING (true);
+CREATE POLICY "Public insert/update state" ON public.app_state FOR ALL USING (true);`;
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(sqlSetupScript);
+    setCopiedSql(true);
+    showToast('📋 Skrip SQL berhasil disalin ke clipboard!', 'success');
+    setTimeout(() => setCopiedSql(false), 2500);
+  };
+
+  const handleTestCloudSync = async () => {
+    setIsTestingCloud(true);
+    try {
+      const res = await downloadStateFromSupabase();
+      if (res.success) {
+        showToast('🟢 Koneksi Supabase Realtime aktif & sukses terhubung!', 'success');
+      } else {
+        showToast('⚠️ Gagal terhubung ke Supabase: ' + (res.message || 'Cek koneksi internet'), 'warning');
+      }
+    } catch {
+      showToast('Koneksi Supabase gagal', 'error');
+    } finally {
+      setIsTestingCloud(false);
+    }
+  };
+
+  const handleManualUpload = async () => {
+    setIsTestingCloud(true);
+    try {
+      const res = await uploadStateToSupabase(db);
+      if (res.success) {
+        showToast('☁️ Database berhasil dicadangkan ke Supabase Realtime!', 'success');
+      } else {
+        showToast('Gagal mencadangkan: ' + (res.message || 'Error sync'), 'error');
+      }
+    } finally {
+      setIsTestingCloud(false);
     }
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl md:text-2xl font-black text-slate-800 dark:text-white flex items-center gap-2">
-            <Store className="w-6 h-6 text-primary" />
-            Pengaturan Master Toko
-          </h1>
-          <p className="text-xs md:text-sm text-slate-500">Konfigurasi profil usaha, format struk, loyalty poin, dan rekening pembayaran</p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleResetDefaults}
-            className="px-3 py-2 rounded-xl border border-app-border text-slate-600 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
-          >
-            <RotateCcw className="w-4 h-4" /> Reset Default
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold flex items-center gap-1.5 shadow-sm"
-          >
-            <Save className="w-4 h-4" /> Simpan Pengaturan
-          </button>
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto animate-fade-in pb-16">
+      {/* Page Title */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[var(--primary)] text-white flex items-center justify-center shadow-xs">
+            <Store className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-xl md:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">
+              Master & Pengaturan Sistem
+            </h1>
+            <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400">
+              Konfigurasi toko, katalog produk, aroma, ukuran, custom role, metode pembayaran, tema, dan database
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-app-border space-x-2 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('profil')}
-          className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap ${
-            activeTab === 'profil'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          <Store className="w-4 h-4" /> Profil Usaha
-        </button>
-        <button
-          onClick={() => setActiveTab('struk')}
-          className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap ${
-            activeTab === 'struk'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          <Receipt className="w-4 h-4" /> Format Struk & Printer
-        </button>
-        <button
-          onClick={() => setActiveTab('pajak')}
-          className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap ${
-            activeTab === 'pajak'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          <Percent className="w-4 h-4" /> Pajak & Poin Loyalty
-        </button>
-        <button
-          onClick={() => setActiveTab('bayar')}
-          className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap ${
-            activeTab === 'bayar'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          <CreditCard className="w-4 h-4" /> Akun Pembayaran & QRIS
-        </button>
-        <button
-          onClick={() => setActiveTab('cloud')}
-          className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap ${
-            activeTab === 'cloud'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          <Cloud className="w-4 h-4" /> Supabase Cloud Sync
-        </button>
+      {/* Main Tab Navigation */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-200 dark:border-slate-800">
+        {[
+          { id: 'profil', label: 'Toko & Struk', icon: Receipt },
+          { id: 'katalog', label: 'Master Katalog & Aroma', icon: Layers },
+          { id: 'roles', label: 'Role & Hak Akses', icon: Shield },
+          { id: 'bayar', label: 'Pembayaran & Pajak', icon: CreditCard },
+          { id: 'tema', label: 'Desain & Tema', icon: Palette },
+          { id: 'cloud', label: 'Supabase Cloud', icon: Cloud },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+                isActive
+                  ? 'bg-[var(--primary)] text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-app-border p-6 shadow-card max-w-4xl">
-        {/* Tab 1: Profil */}
-        {activeTab === 'profil' && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-4 pb-4 border-b border-app-border">
-              <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-app-border bg-slate-50 dark:bg-slate-900 flex items-center justify-center overflow-hidden shrink-0">
-                {form.logo_url ? (
-                  <img src={form.logo_url} alt="Logo" className="w-full h-full object-contain" />
+      {/* =========================================================
+       * TAB 1: PROFIL TOKO & STRUK
+       * ========================================================= */}
+      {activeTab === 'profil' && (
+        <form onSubmit={handleSaveStore} className="space-y-6 max-w-4xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Logo Section */}
+            <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex flex-col items-center justify-center text-center space-y-4">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Logo Toko</span>
+              <div className="w-28 h-28 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-600 overflow-hidden flex items-center justify-center bg-slate-50 dark:bg-slate-900 shadow-inner">
+                {storeForm.logo ? (
+                  <img src={storeForm.logo} alt="Logo" className="w-full h-full object-contain p-2" />
                 ) : (
-                  <Store className="w-8 h-8 text-slate-400" />
+                  <div className="text-slate-400 text-xs">Belum ada logo</div>
                 )}
               </div>
-              <div>
-                <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-xs font-bold cursor-pointer text-slate-700 dark:text-slate-200">
-                  <Upload className="w-4 h-4 text-primary" /> Unggah Logo Toko
-                  <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-                </label>
-                <p className="text-[10px] text-slate-400 mt-1">Format PNG / JPG transparan, maks 500KB</p>
-              </div>
+              <label className="cursor-pointer px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                <Upload className="w-3.5 h-3.5" />
+                Upload Logo Baru
+                <input type="file" accept="image/*" onChange={handleLogoFile} className="hidden" />
+              </label>
+              {storeForm.logo && (
+                <button
+                  type="button"
+                  onClick={() => setStoreForm((prev) => ({ ...prev, logo: '' }))}
+                  className="text-xs text-red-500 hover:underline"
+                >
+                  Hapus Logo
+                </button>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Nama Toko / Outlet</label>
-                <input
-                  type="text"
-                  value={form.nama_toko}
-                  onChange={e => handleChange('nama_toko', e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900 font-bold"
-                />
-              </div>
+            {/* Store Information */}
+            <div className="md:col-span-2 p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
+              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-700 pb-2">
+                Identitas Bisnis
+              </h2>
 
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Nomor Telepon / WhatsApp Toko</label>
-                <input
-                  type="text"
-                  value={form.telepon}
-                  onChange={e => handleChange('telepon', e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900"
-                />
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Nama Toko / Brand</label>
+                  <input
+                    type="text"
+                    value={storeForm.nama}
+                    onChange={(e) => setStoreForm({ ...storeForm, nama: e.target.value })}
+                    className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-800 dark:text-slate-100"
+                    required
+                  />
+                </div>
 
-              <div className="md:col-span-2">
-                <label className="block text-slate-500 font-bold mb-1">Alamat Lengkap</label>
-                <textarea
-                  rows={2}
-                  value={form.alamat}
-                  onChange={e => handleChange('alamat', e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900"
-                />
-              </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Nomor Telepon / WhatsApp</label>
+                  <input
+                    type="text"
+                    value={storeForm.telepon}
+                    onChange={(e) => setStoreForm({ ...storeForm, telepon: e.target.value })}
+                    className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-800 dark:text-slate-100"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Email Toko</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={e => handleChange('email', e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900"
-                />
-              </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Email Bisnis</label>
+                  <input
+                    type="email"
+                    value={storeForm.email}
+                    onChange={(e) => setStoreForm({ ...storeForm, email: e.target.value })}
+                    className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-800 dark:text-slate-100"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Website Toko</label>
-                <input
-                  type="text"
-                  value={form.website || ''}
-                  onChange={e => handleChange('website', e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900"
-                />
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Website Toko</label>
+                  <input
+                    type="text"
+                    value={storeForm.website}
+                    onChange={(e) => setStoreForm({ ...storeForm, website: e.target.value })}
+                    className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Alamat Lengkap Outlet</label>
+                  <textarea
+                    rows={2}
+                    value={storeForm.alamat}
+                    onChange={(e) => setStoreForm({ ...storeForm, alamat: e.target.value })}
+                    className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-800 dark:text-slate-100"
+                  />
+                </div>
               </div>
             </div>
           </div>
-        )}
 
-        {/* Tab 2: Struk */}
-        {activeTab === 'struk' && (
-          <div className="space-y-4 text-xs">
-            <div>
-              <label className="block text-slate-500 font-bold mb-1">Ukuran Kertas Printer Thermal</label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer font-bold">
-                  <input
-                    type="radio"
-                    name="printer_mode"
-                    value="58mm"
-                    checked={form.printer_mode === '58mm'}
-                    onChange={() => handleChange('printer_mode', '58mm')}
-                    className="text-primary focus:ring-primary"
-                  />
-                  58mm (Kecil / Mobile Bluetooth)
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer font-bold">
-                  <input
-                    type="radio"
-                    name="printer_mode"
-                    value="80mm"
-                    checked={form.printer_mode === '80mm'}
-                    onChange={() => handleChange('printer_mode', '80mm')}
-                    className="text-primary focus:ring-primary"
-                  />
-                  80mm (Standar Desktop Kasir)
-                </label>
+          {/* Struk & Printer Configuration */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
+            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-700 pb-2">
+              Pengaturan Struk Kasir & Printer Thermal
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Lebar Kertas Thermal</label>
+                <select
+                  value={storeForm.kertas}
+                  onChange={(e) => setStoreForm({ ...storeForm, kertas: e.target.value as '58' | '80' })}
+                  className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-800 dark:text-slate-100"
+                >
+                  <option value="58">58 mm (Printer Mini / Mobile)</option>
+                  <option value="80">80 mm (Printer Desktop Standar)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Mode Kirim Struk</label>
+                <select
+                  value={storeForm.mode}
+                  onChange={(e) => setStoreForm({ ...storeForm, mode: e.target.value as 'wa' | 'thermal' | 'both' })}
+                  className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-800 dark:text-slate-100"
+                >
+                  <option value="thermal">Hanya Cetak Thermal</option>
+                  <option value="wa">Kirim via WhatsApp</option>
+                  <option value="both">Thermal + WhatsApp</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Rate Komisi Kasir / Staf (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="50"
+                  step="0.5"
+                  value={storeForm.komisiRate}
+                  onChange={(e) => setStoreForm({ ...storeForm, komisiRate: Number(e.target.value) })}
+                  className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="sm:col-span-3">
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Pesan Footer Struk</label>
+                <input
+                  type="text"
+                  value={storeForm.footer}
+                  onChange={(e) => setStoreForm({ ...storeForm, footer: e.target.value })}
+                  placeholder="Contoh: Terima kasih atas kunjungan Anda! 🌸"
+                  className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-medium text-slate-800 dark:text-slate-100"
+                />
               </div>
             </div>
 
-            <div>
-              <label className="block text-slate-500 font-bold mb-1">Pesan Footer Struk Belanja</label>
-              <textarea
-                rows={3}
-                value={form.footer_struk}
-                onChange={e => handleChange('footer_struk', e.target.value)}
-                placeholder="cth: Terima kasih atas kunjungan Anda"
-                className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900 font-mono text-[11px]"
+            <div className="flex items-center gap-2 pt-2">
+              <input
+                type="checkbox"
+                id="autoPrintCheck"
+                checked={storeForm.autoPrint}
+                onChange={(e) => setStoreForm({ ...storeForm, autoPrint: e.target.checked })}
+                className="w-4 h-4 rounded text-[var(--primary)] focus:ring-0"
               />
-              <p className="text-[10px] text-slate-400 mt-1">Dapat berisi informasi ketentuan garansi racikan parfum atau sosial media.</p>
+              <label htmlFor="autoPrintCheck" className="text-xs text-slate-700 dark:text-slate-300 font-medium">
+                Otomatis cetak struk seketika transaksi kasir selesai
+              </label>
             </div>
           </div>
-        )}
 
-        {/* Tab 3: Pajak & Loyalty */}
-        {activeTab === 'pajak' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-app-border space-y-3">
-              <div className="font-bold text-slate-800 dark:text-white uppercase tracking-wider text-[11px]">
-                Pengaturan Pajak & Biaya
-              </div>
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">PPN (%)</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.5}
-                  value={form.pajak_persen}
-                  onChange={e => handleChange('pajak_persen', Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-white dark:bg-slate-800"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Set ke 0 jika harga jual sudah termasuk pajak (nett)</p>
-              </div>
+          <button
+            type="submit"
+            className="px-6 py-2.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white font-bold text-xs md:text-sm flex items-center gap-2 shadow-xs transition-colors"
+          >
+            <Save className="w-4 h-4" />
+            Simpan Pengaturan Toko & Struk
+          </button>
+        </form>
+      )}
 
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Biaya Layanan / Service Fee (%)</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={form.biaya_layanan_persen}
-                  onChange={e => handleChange('biaya_layanan_persen', Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-white dark:bg-slate-800"
-                />
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-app-border space-y-3">
-              <div className="font-bold text-slate-800 dark:text-white uppercase tracking-wider text-[11px]">
-                Loyalty Poin Pelanggan
-              </div>
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Kelipatan Belanja untuk 1 Poin (Rp)</label>
-                <input
-                  type="number"
-                  min={1000}
-                  step={1000}
-                  value={form.poin_per_rupiah}
-                  onChange={e => handleChange('poin_per_rupiah', Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-white dark:bg-slate-800"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Contoh: Belanja Rp 10.000 mendapat 1 poin</p>
-              </div>
-
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Nilai Rupiah per 1 Poin (Rp)</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={form.nilai_per_poin}
-                  onChange={e => handleChange('nilai_per_poin', Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-white dark:bg-slate-800"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Contoh: 1 Poin = Rp 100 saat penukaran</p>
-              </div>
-            </div>
+      {/* =========================================================
+       * TAB 2: MASTER KATALOG (KATEGORI, AROMA, UKURAN)
+       * ========================================================= */}
+      {activeTab === 'katalog' && (
+        <div className="space-y-6">
+          {/* Sub Navigation */}
+          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl w-fit">
+            <button
+              onClick={() => setKatalogSubTab('kategori')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                katalogSubTab === 'kategori'
+                  ? 'bg-white dark:bg-slate-800 text-[var(--primary)] shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              🌸 Kategori Produk ({db.kategori?.length || 0})
+            </button>
+            <button
+              onClick={() => setKatalogSubTab('aroma')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                katalogSubTab === 'aroma'
+                  ? 'bg-white dark:bg-slate-800 text-[var(--primary)] shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              🧪 Aroma Parfum ({db.aroma?.length || 0})
+            </button>
+            <button
+              onClick={() => setKatalogSubTab('ukuran')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                katalogSubTab === 'ukuran'
+                  ? 'bg-white dark:bg-slate-800 text-[var(--primary)] shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              🧴 Ukuran Botol (ml) ({db.ukuran?.length || 0})
+            </button>
           </div>
-        )}
 
-        {/* Tab 4: Pembayaran */}
-        {activeTab === 'bayar' && (
-          <div className="space-y-4 text-xs">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Nama Merchant QRIS</label>
-                <input
-                  type="text"
-                  value={form.qris_merchant_name || ''}
-                  onChange={e => handleChange('qris_merchant_name', e.target.value)}
-                  placeholder="PARFUMKU ID"
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900 font-bold"
-                />
+          {/* 1. KATEGORI SUB-TAB */}
+          {katalogSubTab === 'kategori' && (
+            <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">Daftar Kategori Produk</h3>
+                  <p className="text-xs text-slate-500">Kelola kategori untuk klasifikasi produk pada kasir & inventori</p>
+                </div>
+                <button
+                  onClick={openAddKat}
+                  className="px-3.5 py-1.5 rounded-xl bg-[var(--primary)] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Tambah Kategori
+                </button>
               </div>
 
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Nama Bank / E-Wallet</label>
-                <input
-                  type="text"
-                  value={form.bank_name || ''}
-                  onChange={e => handleChange('bank_name', e.target.value)}
-                  placeholder="BCA / Mandiri / BRI"
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900 font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Nomor Rekening</label>
-                <input
-                  type="text"
-                  value={form.bank_account_number || ''}
-                  onChange={e => handleChange('bank_account_number', e.target.value)}
-                  placeholder="1234567890"
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900 font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-500 font-bold mb-1">Atas Nama Rekening</label>
-                <input
-                  type="text"
-                  value={form.bank_account_holder || ''}
-                  onChange={e => handleChange('bank_account_holder', e.target.value)}
-                  placeholder="PT Parfumku Sejahtera"
-                  className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {(db.kategori || []).map((kat) => (
+                  <div
+                    key={kat.id}
+                    className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 flex items-center justify-between group hover:border-[var(--primary)] transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{kat.icon || '🌸'}</span>
+                      <div>
+                        <div className="font-bold text-xs text-slate-800 dark:text-slate-100">{kat.nama}</div>
+                        <div className="text-[10px] text-slate-400">ID: {kat.id}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                      <button
+                        onClick={() => openEditKat(kat)}
+                        className="p-1 rounded-md text-slate-500 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-800"
+                        title="Edit Kategori"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteKat(kat.id, kat.nama)}
+                        className="p-1 rounded-md text-slate-500 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800"
+                        title="Hapus Kategori"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Tab 5: Cloud */}
-        {activeTab === 'cloud' && (
-          <div className="space-y-4 text-xs">
-            <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl">
-              <div className="font-bold text-primary-dark dark:text-primary-light">Sinkronisasi Cloud Supabase</div>
-              <p className="text-slate-500 dark:text-slate-400 text-[11px] mt-0.5">
-                Konfigurasi kredensial database cloud Supabase untuk sinkronisasi otomatis realtime multi-cabang.
+          {/* 2. AROMA SUB-TAB */}
+          {katalogSubTab === 'aroma' && (
+            <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">Daftar Aroma & Varian Parfum</h3>
+                  <p className="text-xs text-slate-500">Database master bibit aroma parfum untuk refill, racikan, dan botolan</p>
+                </div>
+                <button
+                  onClick={openAddAroma}
+                  className="px-3.5 py-1.5 rounded-xl bg-[var(--primary)] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Tambah Aroma Baru
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {(db.aroma || []).map((a) => (
+                  <div
+                    key={a.id}
+                    className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 flex items-center justify-between group hover:border-[var(--primary)] transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold text-xs flex items-center justify-center">
+                        {a.kode || 'PAR'}
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs text-slate-800 dark:text-slate-100">{a.nama}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">Kode: {a.kode}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                      <button
+                        onClick={() => openEditAroma(a)}
+                        className="p-1 rounded-md text-slate-500 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-800"
+                        title="Edit Aroma"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAroma(a.id, a.nama)}
+                        className="p-1 rounded-md text-slate-500 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800"
+                        title="Hapus Aroma"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 3. UKURAN BOTOL SUB-TAB */}
+          {katalogSubTab === 'ukuran' && (
+            <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">Daftar Ukuran Botol (ml)</h3>
+                  <p className="text-xs text-slate-500">Standar kapasitas mililiter botol untuk racikan & refill</p>
+                </div>
+                <button
+                  onClick={openAddUkuran}
+                  className="px-3.5 py-1.5 rounded-xl bg-[var(--primary)] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Tambah Ukuran
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {(db.ukuran || []).map((u) => (
+                  <div
+                    key={u.id}
+                    className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 flex items-center justify-between group hover:border-[var(--primary)] transition-all"
+                  >
+                    <div>
+                      <div className="font-black text-sm text-slate-800 dark:text-slate-100">{u.nama}</div>
+                      <div className="text-[10px] text-slate-400 font-medium">{u.ml} mililiter</div>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                      <button
+                        onClick={() => openEditUkuran(u)}
+                        className="p-1 rounded-md text-slate-500 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-800"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUkuran(u.id, u.nama)}
+                        className="p-1 rounded-md text-slate-500 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =========================================================
+       * TAB 3: MASTER ROLE & JABATAN
+       * ========================================================= */}
+      {activeTab === 'roles' && (
+        <div className="space-y-6">
+          {/* Header & Add Button */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm md:text-base font-bold text-slate-800 dark:text-slate-100">
+                Manajemen Role & Jabatan Bebas
+              </h2>
+              <p className="text-xs text-slate-500">
+                Bukan cuma Kasir/Gudang/Marketing! Tambah role Supervisor, Blender, Barista, Finance, Kurir, dll.
               </p>
             </div>
+            <button
+              onClick={openAddRole}
+              className="px-4 py-2 rounded-xl bg-[var(--primary)] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs"
+            >
+              <Plus className="w-4 h-4" />
+              Tambah Role Baru
+            </button>
+          </div>
 
-            <div>
-              <label className="block text-slate-500 font-bold mb-1">Supabase Project URL</label>
-              <input
-                type="text"
-                value={form.supabase_url || ''}
-                onChange={e => handleChange('supabase_url', e.target.value)}
-                placeholder="https://xyzcompany.supabase.co"
-                className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900 font-mono text-[11px]"
-              />
+          {/* Role Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            {currentRoleList.map((r) => {
+              const isSelected = selectedRoleForPerms === r.nama;
+              return (
+                <div
+                  key={r.id}
+                  onClick={() => setSelectedRoleForPerms(r.nama)}
+                  className={`p-4 rounded-2xl border transition-all cursor-pointer relative ${
+                    isSelected
+                      ? 'border-[var(--primary)] bg-[var(--primary-soft)]/20 shadow-xs'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                        r.warna || 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {r.label}
+                    </span>
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => openEditRole(r)}
+                        className="p-1 rounded text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700"
+                        title="Edit Role"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      {r.nama !== 'owner' && (
+                        <button
+                          onClick={() => handleDeleteRole(r)}
+                          className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-700"
+                          title="Hapus Role"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-[11px] font-mono text-slate-400">ID: {r.nama}</div>
+                  <div className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-2">
+                    {r.deskripsi || 'Tidak ada deskripsi'}
+                  </div>
+                  {isSelected && (
+                    <div className="mt-2 text-[10px] font-bold text-[var(--primary)] flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Mengatur Hak Akses
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Permission Matrix Box for the Selected Role */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+              <div>
+                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                  Hak Akses Menu untuk Role:{' '}
+                  <span className="text-[var(--primary)] uppercase font-black">{selectedRoleForPerms}</span>
+                </h3>
+                <p className="text-xs text-slate-500">Centang menu yang diizinkan untuk dibuka oleh staf dengan role ini</p>
+              </div>
+              {selectedRoleForPerms === 'owner' && (
+                <span className="text-xs bg-red-100 text-red-700 px-3 py-1 rounded-full font-bold">
+                  Owner Memiliki Semua Akses (*)
+                </span>
+              )}
             </div>
 
-            <div>
-              <label className="block text-slate-500 font-bold mb-1">Supabase Anon Public Key</label>
-              <input
-                type="password"
-                value={form.supabase_anon_key || ''}
-                onChange={e => handleChange('supabase_anon_key', e.target.value)}
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                className="w-full px-3 py-2 rounded-xl border border-app-border bg-slate-50 dark:bg-slate-900 font-mono text-[11px]"
-              />
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {ALL_APP_PERMISSIONS.map((perm) => {
+                const rolePerms =
+                  db.role_permissions?.[selectedRoleForPerms] ||
+                  (selectedRoleForPerms === 'owner' ? ['*'] : []);
+                const isChecked = rolePerms.includes('*') || rolePerms.includes(perm.id);
 
-            <div className="pt-2 flex items-center justify-between">
-              <div className="text-[11px] text-slate-500">
-                Default project: <code className="text-primary font-bold">ekzzgbuwqhfifrmkkahj.supabase.co</code>
+                return (
+                  <label
+                    key={perm.id}
+                    onClick={() => togglePermissionForRole(perm.id)}
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                      isChecked
+                        ? 'border-[var(--primary)] bg-[var(--primary-soft)]/30 text-slate-800 dark:text-slate-100 font-semibold'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-750'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      disabled={selectedRoleForPerms === 'owner'}
+                      readOnly
+                      className="mt-0.5 w-4 h-4 rounded text-[var(--primary)] focus:ring-0"
+                    />
+                    <div>
+                      <div>{perm.label}</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Kategori: {perm.category}</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+       * TAB 4: METODE PEMBAYARAN & PAJAK
+       * ========================================================= */}
+      {activeTab === 'bayar' && (
+        <div className="space-y-6 max-w-4xl">
+          {/* Payment Methods */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">Daftar Metode Pembayaran Kasir</h3>
+                <p className="text-xs text-slate-500">Aktifkan atau tambah channel pembayaran baru pada mesin kasir</p>
               </div>
               <button
-                type="button"
-                onClick={async () => {
-                  addNotification('Sedang memeriksa koneksi Supabase...', 'info');
-                  const { checkSupabaseConnection } = await import('../services/supabase');
-                  const res = await checkSupabaseConnection(form.supabase_url, form.supabase_anon_key);
-                  addNotification(res.message, res.connected ? 'success' : 'error');
-                }}
-                className="px-4 py-2 rounded-xl border border-primary text-primary hover:bg-primary/10 font-bold text-xs transition-colors"
+                onClick={() => setPayModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-[var(--primary)] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
               >
-                Uji Koneksi Supabase
+                <Plus className="w-3.5 h-3.5" />
+                Tambah Metode Bayar
+              </button>
+            </div>
+
+            <div className="divide-y divide-slate-100 dark:divide-slate-700">
+              {currentPayMethods.map((pay) => (
+                <div key={pay.id} className="py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{pay.icon || '💳'}</span>
+                    <div>
+                      <div className="font-bold text-xs text-slate-800 dark:text-slate-100">{pay.nama}</div>
+                      {pay.bank_account && (
+                        <div className="text-[11px] text-slate-400">Rek/Info: {pay.bank_account}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs">
+                      <input
+                        type="checkbox"
+                        checked={pay.aktif}
+                        onChange={() => handleTogglePay(pay.id)}
+                        className="w-4 h-4 rounded text-[var(--primary)]"
+                      />
+                      <span className={pay.aktif ? 'text-emerald-600 font-bold' : 'text-slate-400'}>
+                        {pay.aktif ? 'Aktif di Kasir' : 'Non-aktif'}
+                      </span>
+                    </label>
+
+                    {pay.id !== 'cash' && (
+                      <button
+                        onClick={() => handleDeletePayment(pay.id, pay.nama)}
+                        className="p-1 rounded text-slate-400 hover:text-red-500"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Tax and Loyalty */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100 border-b border-slate-100 dark:border-slate-700 pb-2">
+              Pajak PPN & Program Loyalty Poin
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Tarif PPN (%)</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="30"
+                    value={taxPersen}
+                    onChange={(e) => setTaxPersen(Number(e.target.value))}
+                    className="w-24 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-bold"
+                  />
+                  <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={taxAktif}
+                      onChange={(e) => setTaxAktif(e.target.checked)}
+                      className="w-4 h-4 rounded text-[var(--primary)]"
+                    />
+                    Terapkan PPN pada struk
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  Rate Belanja per 1 Poin (Rp)
+                </label>
+                <input
+                  type="number"
+                  min="100"
+                  step="100"
+                  value={poinRate}
+                  onChange={(e) => setPoinRate(Number(e.target.value))}
+                  className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-bold"
+                />
+                <span className="text-[10px] text-slate-400">
+                  Contoh: Setiap belanja Rp {Number(poinRate).toLocaleString('id-ID')} mendapat 1 poin
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleSaveTaxAndPoints}
+              className="px-5 py-2 rounded-xl bg-[var(--primary)] text-white text-xs font-bold flex items-center gap-2"
+            >
+              <Save className="w-3.5 h-3.5" />
+              Simpan Pajak & Poin
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+       * TAB 5: TEMA & TAMPILAN
+       * ========================================================= */}
+      {activeTab === 'tema' && (
+        <div className="space-y-6 max-w-4xl">
+          {/* Color Palettes */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
+            <div>
+              <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">Pilihan Palet Warna Aksen Utama</h3>
+              <p className="text-xs text-slate-500">Pilih skema warna mewah sesuai identitas visual butik parfum Anda</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {THEME_PRESETS.map((p) => {
+                const isSelected = (themeColor || 'emerald') === p.id;
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setThemeColor(p.id)}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                      isSelected
+                        ? 'border-2 border-slate-900 dark:border-white shadow-md'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-7 h-7 rounded-full shadow-xs flex items-center justify-center text-white"
+                        style={{ backgroundColor: p.primary }}
+                      >
+                        {isSelected && <Check className="w-4 h-4 stroke-[3]" />}
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs text-slate-800 dark:text-slate-100">{p.nama}</div>
+                        <div className="text-[10px] font-mono text-slate-400">{p.primary}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Dark / Light Mode Switch */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200">
+                {theme === 'dark' ? <Moon className="w-5 h-5 text-amber-400" /> : <Sun className="w-5 h-5 text-amber-500" />}
+              </div>
+              <div>
+                <div className="font-bold text-xs md:text-sm text-slate-800 dark:text-slate-100">
+                  Mode Gelap (Dark Mode): <span className="uppercase">{theme}</span>
+                </div>
+                <div className="text-xs text-slate-400">Peralihan tampilan kontras tinggi untuk suasana toko redup</div>
+              </div>
+            </div>
+
+            <button
+              onClick={toggleTheme}
+              className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors"
+            >
+              Ubah ke {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+            </button>
+          </div>
+
+          {/* Live Preview Card */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-3">
+            <h4 className="font-bold text-xs text-slate-500 uppercase tracking-wider">Live Preview Komponen</h4>
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex flex-wrap items-center gap-3">
+              <button className="px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-xs font-bold shadow-xs">
+                Tombol Utama
+              </button>
+              <button className="px-4 py-2 rounded-xl bg-[var(--primary-dark)] text-white text-xs font-bold">
+                Aksen Hover
+              </button>
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-[var(--primary-soft)] text-[var(--primary-dark)]">
+                Badge Aktif
+              </span>
+              <div
+                className="w-8 h-8 rounded-lg text-white font-bold flex items-center justify-center text-xs"
+                style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-light))' }}
+              >
+                P
+              </div>
+              <span className="text-xs font-semibold text-[var(--primary)]">Teks Highlight Parfum</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+       * TAB 6: CLOUD & SUPABASE REALTIME
+       * ========================================================= */}
+      {activeTab === 'cloud' && (
+        <div className="space-y-6 max-w-4xl">
+          {/* Cloud Status */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Cloud className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">Supabase Realtime Sync</h3>
+                  <p className="text-xs text-slate-500">
+                    Sinkronisasi data multi-kasir & multi-perangkat secara otomatis dan real-time
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
+                🟢 Aktif Realtime
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Supabase Project URL</label>
+                <input
+                  type="text"
+                  value={supabaseUrl}
+                  onChange={(e) => setSupabaseUrl(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Supabase Anon Key</label>
+                <input
+                  type="password"
+                  value={supabaseKey}
+                  onChange={(e) => setSupabaseKey(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-100"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 flex-wrap">
+              <button
+                onClick={handleTestCloudSync}
+                disabled={isTestingCloud}
+                className="px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-xs font-bold flex items-center gap-2 shadow-xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isTestingCloud ? 'animate-spin' : ''}`} />
+                Uji Koneksi Realtime
+              </button>
+              <button
+                onClick={handleManualUpload}
+                disabled={isTestingCloud}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold flex items-center gap-2 shadow-xs"
+              >
+                <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+                Cadangkan ke Supabase Sekarang
               </button>
             </div>
           </div>
-        )}
-      </div>
+
+          {/* SQL Helper Script */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-bold text-xs text-slate-800 dark:text-slate-100">
+                  Skrip SQL Pembuatan Tabel di Supabase SQL Editor
+                </h4>
+                <p className="text-[11px] text-slate-500">
+                  Jalankan skrip ini sekali di dashboard Supabase jika tabel `app_state` belum dibuat
+                </p>
+              </div>
+              <button
+                onClick={handleCopySql}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5"
+              >
+                {copiedSql ? <CheckCheck className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedSql ? 'Tersalin!' : 'Salin SQL'}
+              </button>
+            </div>
+
+            <pre className="p-3.5 rounded-xl bg-slate-900 text-slate-200 font-mono text-[11px] overflow-x-auto leading-relaxed">
+              {sqlSetupScript}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+       * MODALS
+       * ========================================================= */}
+
+      {/* KATEGORI MODAL */}
+      {katModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+          <form
+            onSubmit={handleSaveKat}
+            className="bg-white dark:bg-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-2">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                {katEditId ? 'Edit Kategori' : 'Tambah Kategori Baru'}
+              </h3>
+              <button type="button" onClick={() => setKatModalOpen(false)}>
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Nama Kategori</label>
+              <input
+                type="text"
+                placeholder="Contoh: EDP Signature"
+                value={katNama}
+                onChange={(e) => setKatNama(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Icon Emoji</label>
+              <input
+                type="text"
+                value={katIcon}
+                onChange={(e) => setKatIcon(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setKatModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-xs font-bold"
+              >
+                Simpan
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* AROMA MODAL */}
+      {aromaModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+          <form
+            onSubmit={handleSaveAroma}
+            className="bg-white dark:bg-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-2">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                {aromaEditId ? 'Edit Aroma Parfum' : 'Tambah Aroma Parfum Baru'}
+              </h3>
+              <button type="button" onClick={() => setAromaModalOpen(false)}>
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Nama Varian Aroma</label>
+              <input
+                type="text"
+                placeholder="Contoh: Vanilla Musk"
+                value={aromaNama}
+                onChange={(e) => setAromaNama(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Kode Singkat (3-4 Huruf)</label>
+              <input
+                type="text"
+                placeholder="Contoh: VMS"
+                value={aromaKode}
+                onChange={(e) => setAromaKode(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-mono uppercase text-slate-800 dark:text-slate-100"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setAromaModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-xs font-bold"
+              >
+                Simpan
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* UKURAN MODAL */}
+      {ukuranModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+          <form
+            onSubmit={handleSaveUkuran}
+            className="bg-white dark:bg-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-2">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                {ukuranEditId ? 'Edit Ukuran Botol' : 'Tambah Ukuran Botol'}
+              </h3>
+              <button type="button" onClick={() => setUkuranModalOpen(false)}>
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Label Ukuran</label>
+              <input
+                type="text"
+                placeholder="Contoh: 30ml atau 50ml Refill"
+                value={ukuranNama}
+                onChange={(e) => setUkuranNama(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Kapasitas (ml)</label>
+              <input
+                type="number"
+                min="1"
+                max="5000"
+                value={ukuranMl}
+                onChange={(e) => setUkuranMl(Number(e.target.value))}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-slate-100"
+                required
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setUkuranModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-xs font-bold"
+              >
+                Simpan
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ROLE MODAL */}
+      {roleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+          <form
+            onSubmit={handleSaveRole}
+            className="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-2">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                {roleEditId ? 'Edit Role Karyawan' : 'Tambah Role / Jabatan Baru'}
+              </h3>
+              <button type="button" onClick={() => setRoleModalOpen(false)}>
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Nama Tampilan Role</label>
+              <input
+                type="text"
+                placeholder="Contoh: Supervisor, Blender Parfum, Kurir"
+                value={roleLabel}
+                onChange={(e) => setRoleLabel(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 font-bold"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Deskripsi Jabatan</label>
+              <input
+                type="text"
+                placeholder="Contoh: Bertanggung jawab atas racikan bibit parfum"
+                value={roleDeskripsi}
+                onChange={(e) => setRoleDeskripsi(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Warna Tag Badge</label>
+              <div className="grid grid-cols-4 gap-2 mt-1">
+                {ROLE_COLOR_PRESETS.map((col) => (
+                  <button
+                    key={col.label}
+                    type="button"
+                    onClick={() => setRoleWarna(col.val)}
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-bold ${col.val} border ${
+                      roleWarna === col.val ? 'ring-2 ring-slate-900 dark:ring-white' : 'opacity-80'
+                    }`}
+                  >
+                    {col.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3">
+              <button
+                type="button"
+                onClick={() => setRoleModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-xs font-bold"
+              >
+                Simpan Role
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* PAYMENT METHOD MODAL */}
+      {payModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+          <form
+            onSubmit={handleAddPaymentMethod}
+            className="bg-white dark:bg-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-2">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100">Tambah Metode Pembayaran</h3>
+              <button type="button" onClick={() => setPayModalOpen(false)}>
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Nama Metode</label>
+              <input
+                type="text"
+                placeholder="Contoh: Mandiri Virtual Account"
+                value={payNama}
+                onChange={(e) => setPayNama(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Icon Emoji</label>
+              <input
+                type="text"
+                placeholder="💳, 🏦, 📱, dll"
+                value={payIcon}
+                onChange={(e) => setPayIcon(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                Nomor Rekening / Keterangan
+              </label>
+              <input
+                type="text"
+                placeholder="Contoh: 123-456-7890 a.n Toko Parfum"
+                value={payRekening}
+                onChange={(e) => setPayRekening(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPayModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-xs font-bold"
+              >
+                Tambahkan
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

@@ -24,6 +24,7 @@ import { RfmPage } from './pages/RfmPage';
 import { KaryawanPage } from './pages/KaryawanPage';
 import { ShiftPages } from './pages/ShiftPages';
 import { AbsensiPage } from './pages/AbsensiPage';
+import { LaporanKaryawanPage } from './pages/LaporanKaryawanPage';
 import { PayrollPage } from './pages/PayrollPage';
 import { LaporanPages } from './pages/LaporanPages';
 import { HakAksesPage } from './pages/HakAksesPage';
@@ -99,8 +100,9 @@ export const App: React.FC = () => {
       case 'shift-history':
         return <ShiftPages initialTab="history" />;
       case 'absensi':
-      case 'laporan-karyawan':
         return <AbsensiPage />;
+      case 'laporan-karyawan':
+        return <LaporanKaryawanPage />;
       case 'payroll':
         return <PayrollPage />;
       case 'laporan-penjualan':

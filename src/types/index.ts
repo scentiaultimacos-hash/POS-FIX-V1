@@ -313,8 +313,10 @@ export interface PaymentMethodConfig {
   id: string;
   nama: string;
   icon: string;
-  biaya: number; // %
+  biaya?: number; // %
   aktif: boolean;
+  bank_account?: string;
+  qris_payload?: string;
 }
 
 export interface AttendanceStatusConfig {

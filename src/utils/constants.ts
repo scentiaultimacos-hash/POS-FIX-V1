@@ -11,6 +11,91 @@ export const THEME_KEY = 'pos_parfum_theme_v7';
 export const THEME_COLOR_KEY = 'pos_parfum_themecolor_v7';
 export const PWD_SALT = '::parfumku_v7_0_2026::';
 
+export interface ThemePreset {
+  id: string;
+  nama: string;
+  primary: string;
+  primaryDark: string;
+  primaryLight: string;
+  primaryHover: string;
+  primarySoft: string;
+  primarySoftDark: string;
+}
+
+export const THEME_PRESETS: ThemePreset[] = [
+  {
+    id: 'emerald',
+    nama: 'Emerald Mint (Default)',
+    primary: '#00C9A7',
+    primaryDark: '#00A88E',
+    primaryLight: '#4ADE80',
+    primaryHover: '#00B894',
+    primarySoft: '#E6FAF5',
+    primarySoftDark: '#064e3b',
+  },
+  {
+    id: 'sapphire',
+    nama: 'Sapphire Royal Blue',
+    primary: '#2563EB',
+    primaryDark: '#1D4ED8',
+    primaryLight: '#60A5FA',
+    primaryHover: '#1E40AF',
+    primarySoft: '#EFF6FF',
+    primarySoftDark: '#1e3a8a',
+  },
+  {
+    id: 'rose',
+    nama: 'Rose Gold / Ruby Luxury',
+    primary: '#E11D48',
+    primaryDark: '#BE123C',
+    primaryLight: '#FB7185',
+    primaryHover: '#9F1239',
+    primarySoft: '#FFF1F2',
+    primarySoftDark: '#881337',
+  },
+  {
+    id: 'amber',
+    nama: 'Amber Sunset Glow',
+    primary: '#D97706',
+    primaryDark: '#B45309',
+    primaryLight: '#FBBF24',
+    primaryHover: '#92400E',
+    primarySoft: '#FFFBEB',
+    primarySoftDark: '#78350f',
+  },
+  {
+    id: 'purple',
+    nama: 'Royal Velvet Purple',
+    primary: '#8B5CF6',
+    primaryDark: '#7C3AED',
+    primaryLight: '#C4B5FD',
+    primaryHover: '#6D28D9',
+    primarySoft: '#F5F3FF',
+    primarySoftDark: '#4c1d95',
+  },
+  {
+    id: 'obsidian',
+    nama: 'Obsidian Slate Elegance',
+    primary: '#475569',
+    primaryDark: '#334155',
+    primaryLight: '#94A3B8',
+    primaryHover: '#1E293B',
+    primarySoft: '#F8FAFC',
+    primarySoftDark: '#1e293b',
+  },
+];
+
+export function applyThemeColor(presetId: string, isDark: boolean = false) {
+  const preset = THEME_PRESETS.find((p) => p.id === presetId) || THEME_PRESETS[0];
+  const root = document.documentElement;
+  root.style.setProperty('--primary', preset.primary);
+  root.style.setProperty('--primary-dark', preset.primaryDark);
+  root.style.setProperty('--primary-light', preset.primaryLight);
+  root.style.setProperty('--primary-hover', preset.primaryHover);
+  root.style.setProperty('--primary-soft', isDark ? preset.primarySoftDark : preset.primarySoft);
+  localStorage.setItem(THEME_COLOR_KEY, preset.id);
+}
+
 export const KLASIFIKASI: Record<string, { nama: string; icon: string; warna: string }> = {
   bahan_cair: { nama: 'Bahan Cair', icon: '🧴', warna: 'bg-cyan-100 text-cyan-700' },
   bahan_padat: { nama: 'Bahan Padat', icon: '🧂', warna: 'bg-orange-100 text-orange-700' },
