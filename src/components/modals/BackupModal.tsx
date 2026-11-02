@@ -36,7 +36,7 @@ interface BackupModalProps {
 }
 
 export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => {
-  const { db, updateDb, showToast, showConfirm, logActivity, triggerCloudSync, cloudSyncStatus, lastCloudSyncTime } = usePOS();
+  const { db, updateDb, showToast, showConfirm, logActivity, triggerCloudSync, reconnectCloud, cloudSyncStatus, lastCloudSyncTime } = usePOS();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [activeTab, setActiveTab] = useState<'cloud' | 'local'>('cloud');
@@ -130,7 +130,8 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
     if (res.connected) {
       showToast('✅ Berhasil terhubung ke Supabase!', 'success');
       logActivity('Hubungkan akun Supabase baru', 'Cloud');
-      // Trigger initial backup push
+      // Re-establish real-time subscription & download latest cloud state
+      reconnectCloud();
       triggerCloudSync();
     } else {
       showToast(`Gagal terhubung: ${res.message}`, 'error');
@@ -142,6 +143,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
       clearSupabaseConfig();
       setSupabaseUrl('');
       setSupabaseAnonKey('');
+      reconnectCloud();
       setConnState({
         tested: true,
         connected: false,

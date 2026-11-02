@@ -31,6 +31,7 @@ import {
   subscribeToSupabaseRealtime,
   CLIENT_SESSION_ID,
   getStoredSupabaseConfig,
+  mergeDatabaseStates,
 } from '../services/supabase';
 
 export interface ToastMessage {
@@ -116,6 +117,8 @@ interface POSContextType {
   cloudSyncStatus: 'synced' | 'syncing' | 'offline' | 'needs_table' | 'error';
   lastCloudSyncTime: string | null;
   triggerCloudSync: () => Promise<void>;
+  reconnectCloud: () => void;
+  cloudConfigVersion: number;
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -273,6 +276,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [updateDb]);
 
   // Cloud Sync State
+  const [cloudConfigVersion, setCloudConfigVersion] = useState<number>(0);
+  const reconnectCloud = useCallback(() => {
+    setCloudConfigVersion((v) => v + 1);
+  }, []);
+
   const checkCloudReady = useCallback(() => {
     const cfg = getStoredSupabaseConfig();
     return Boolean((SUPABASE_URL || cfg.url) && (SUPABASE_ANON || cfg.anonKey));
@@ -304,7 +312,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [db, checkCloudReady]);
 
-  // Debounced auto-sync: only runs when idle for 2500ms and not disabled
+  // Debounced auto-sync: pushes local state changes to Supabase cloud
   useEffect(() => {
     const isReady = checkCloudReady();
     if (!isReady) {
@@ -335,74 +343,108 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         setCloudSyncStatus('error');
       }
-    }, 2500);
+    }, 2000);
 
     return () => {
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
   }, [db, checkCloudReady]);
 
-  // Initial cloud fetch and realtime subscription with echo suppression
+  // Real-time synchronization across all devices (Owner, Kasir, and Mobile Absensi)
   useEffect(() => {
     const isReady = checkCloudReady();
     if (!isReady) {
       setCloudSyncStatus('offline');
       return;
     }
-    const localModified = Number(localStorage.getItem('pos_last_modified') || 0);
 
-    // 1. Initial connection check & pull ONLY if local is unedited or cloud is confirmed newer
+    let isSubscribed = true;
+
+    // 1. Initial cloud fetch & merge
     downloadStateFromSupabase().then((res) => {
+      if (!isSubscribed) return;
       if (res.success && res.data) {
-        // Guard: if user has already made local edits in this active session, do not overwrite!
-        if (lastLocalEditTimeRef.current > 0) {
-          return;
-        }
-
-        const cloudTimestamp = res.clientTimestamp || (res.updatedAt ? new Date(res.updatedAt).getTime() : 0);
-
-        if (cloudTimestamp > localModified) {
-          isRemoteSyncRef.current = true;
-          const normalized = normalizeDb(res.data);
-          setDb(normalized);
+        setDb((currentDb) => {
+          const merged = mergeDatabaseStates(currentDb, res.data!);
+          const normalized = normalizeDb(merged);
           try {
             localStorage.setItem(DB_KEY, JSON.stringify(normalized));
-            localStorage.setItem('pos_last_modified', String(cloudTimestamp));
+            localStorage.setItem('pos_last_modified', String(Date.now()));
           } catch (e) {}
-          setCloudSyncStatus('synced');
-          if (res.updatedAt) setLastCloudSyncTime(res.updatedAt);
-        } else if (localModified > 0 && cloudTimestamp < localModified) {
-          // Local data is newer than cloud: sync local up to cloud
-          triggerCloudSync();
-        }
+          return normalized;
+        });
+        setCloudSyncStatus('synced');
+        if (res.updatedAt) setLastCloudSyncTime(res.updatedAt);
+      } else if (res.message && res.message.includes('pos_backups')) {
+        setCloudSyncStatus('needs_table');
       }
     });
 
-    // 2. Realtime listener across devices (Echo-suppressed: never reacts to own updates)
-    const unsubscribe = subscribeToSupabaseRealtime((incomingDb, updatedAt, senderClientId, clientTimestamp) => {
+    // 2. Realtime listener: instant updates when cashier makes sale or employee checks in
+    const unsubscribe = subscribeToSupabaseRealtime((incomingDb, updatedAt, senderClientId) => {
+      if (!isSubscribed) return;
+
       // Echo suppression: Ignore if originated from this browser tab
       if (senderClientId && senderClientId === CLIENT_SESSION_ID) {
         return;
       }
 
-      // Ignore if local edits are newer than incoming cloud timestamp
-      if (clientTimestamp && clientTimestamp <= lastLocalEditTimeRef.current) {
-        return;
-      }
-
       isRemoteSyncRef.current = true;
-      const normalized = normalizeDb(incomingDb);
-      setDb(normalized);
-      try {
-        localStorage.setItem(DB_KEY, JSON.stringify(normalized));
-        localStorage.setItem('pos_last_modified', String(Date.now()));
-      } catch (e) {}
+      setDb((currentDb) => {
+        const merged = mergeDatabaseStates(currentDb, incomingDb);
+        const normalized = normalizeDb(merged);
+        try {
+          localStorage.setItem(DB_KEY, JSON.stringify(normalized));
+          localStorage.setItem('pos_last_modified', String(Date.now()));
+        } catch (e) {}
+        return normalized;
+      });
       setCloudSyncStatus('synced');
       setLastCloudSyncTime(updatedAt);
       showToast('⚡ Data diperbarui dari perangkat lain secara realtime', 'info', 2000);
     });
 
-    // 3. Online/offline listener
+    // 3. Visibility change listener (re-fetch when user/owner opens or returns to tab)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && checkCloudReady() && navigator.onLine) {
+        downloadStateFromSupabase().then((res) => {
+          if (!isSubscribed) return;
+          if (res.success && res.data) {
+            setDb((currentDb) => {
+              const merged = mergeDatabaseStates(currentDb, res.data!);
+              const normalized = normalizeDb(merged);
+              try {
+                localStorage.setItem(DB_KEY, JSON.stringify(normalized));
+              } catch (e) {}
+              return normalized;
+            });
+            setCloudSyncStatus('synced');
+            if (res.updatedAt) setLastCloudSyncTime(res.updatedAt);
+          }
+        });
+      }
+    };
+
+    // 4. Background heartbeat (15s) for mobile browsers where WebSockets may sleep
+    const heartbeatInterval = setInterval(() => {
+      if (document.visibilityState === 'visible' && checkCloudReady() && navigator.onLine) {
+        downloadStateFromSupabase().then((res) => {
+          if (!isSubscribed) return;
+          if (res.success && res.data) {
+            setDb((currentDb) => {
+              const merged = mergeDatabaseStates(currentDb, res.data!);
+              const normalized = normalizeDb(merged);
+              try {
+                localStorage.setItem(DB_KEY, JSON.stringify(normalized));
+              } catch (e) {}
+              return normalized;
+            });
+          }
+        });
+      }
+    }, 15000);
+
+    // 5. Online/offline listener
     const handleOnline = () => {
       setCloudSyncStatus('syncing');
       triggerCloudSync();
@@ -411,13 +453,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      isSubscribed = false;
       unsubscribe();
+      clearInterval(heartbeatInterval);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [cloudConfigVersion, checkCloudReady, triggerCloudSync, showToast]);
 
   // Log Activity
   const logActivity = useCallback((aksi: string, modul: string) => {
@@ -850,6 +896,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cloudSyncStatus,
         lastCloudSyncTime,
         triggerCloudSync,
+        reconnectCloud,
+        cloudConfigVersion,
       }}
     >
       {children}

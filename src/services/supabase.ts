@@ -19,24 +19,120 @@ export const CLIENT_SESSION_ID: string = (() => {
 })();
 
 /**
- * Returns an isolated store ID partition to prevent different stores or preview instances
- * from clobbering each other's database on the shared Supabase project.
+ * Returns a consistent store partition ID.
+ * Defaults to 'store_main' so all devices sharing the same Supabase project
+ * automatically connect to and sync the exact same live database row.
  */
-export const getStoreId = (db?: DatabaseState): string => {
+export const getStoreId = (_db?: DatabaseState): string => {
   try {
     const custom = localStorage.getItem('pos_store_partition_id');
     if (custom && custom.trim()) return custom.trim();
   } catch {
     // Ignore storage restrictions
   }
-
-  if (db?.settings?.store_id) return db.settings.store_id;
-  const storeName = db?.master?.toko?.nama || db?.settings?.nama_toko;
-  if (storeName && storeName !== 'PARFUMKU STORE' && storeName !== 'Parfumku POS') {
-    return 'store_' + storeName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-  }
-
   return 'store_main';
+};
+
+/**
+ * Intelligently merges local and remote database states.
+ * Ensures transactions from Cashier and attendance selfies from Staff
+ * are both preserved across all devices without clobbering each other.
+ */
+export const mergeDatabaseStates = (local: DatabaseState, remote: DatabaseState): DatabaseState => {
+  if (!local) return remote;
+  if (!remote) return local;
+
+  const unionById = <T extends Record<string, any>>(localArr: T[] = [], remoteArr: T[] = [], key: string = 'id'): T[] => {
+    const map = new Map<string, T>();
+
+    // 1. Process remote records
+    for (const item of remoteArr || []) {
+      const k = item?.[key];
+      if (k !== undefined && k !== null) {
+        map.set(String(k), item);
+      }
+    }
+
+    // 2. Process and merge local records
+    for (const item of localArr || []) {
+      const k = item?.[key];
+      if (k === undefined || k === null) continue;
+      const strKey = String(k);
+      if (!map.has(strKey)) {
+        map.set(strKey, item);
+      } else {
+        const existing = map.get(strKey)!;
+        // Honor soft-deleted flags so deletions stick across all devices
+        if (item.deleted_at || existing.deleted_at) {
+          map.set(strKey, { ...existing, ...item, deleted_at: item.deleted_at || existing.deleted_at });
+          continue;
+        }
+
+        const itemTime = item.updated_at ? new Date(item.updated_at).getTime() : (item.created_at ? new Date(item.created_at).getTime() : 0);
+        const existingTime = existing.updated_at ? new Date(existing.updated_at).getTime() : (existing.created_at ? new Date(existing.created_at).getTime() : 0);
+
+        if (itemTime > existingTime) {
+          map.set(strKey, { ...existing, ...item });
+        } else {
+          map.set(strKey, { ...item, ...existing });
+        }
+      }
+    }
+
+    return Array.from(map.values());
+  };
+
+  return {
+    ...remote,
+    ...local,
+    company: remote.company || local.company,
+    outlets: unionById(local.outlets, remote.outlets),
+    kategori: unionById(local.kategori, remote.kategori),
+    aroma: unionById(local.aroma, remote.aroma),
+    ukuran: unionById(local.ukuran, remote.ukuran),
+    harga: unionById(local.harga, remote.harga),
+    produk: unionById(local.produk, remote.produk),
+    bahan_baku: unionById(local.bahan_baku, remote.bahan_baku),
+    pelanggan: unionById(local.pelanggan, remote.pelanggan),
+    karyawan: unionById(local.karyawan, remote.karyawan),
+    absensi: unionById(local.absensi, remote.absensi),
+    payroll: unionById(local.payroll, remote.payroll),
+    transaksi: unionById(local.transaksi, remote.transaksi),
+    kasbon: unionById(local.kasbon, remote.kasbon),
+    vouchers: unionById(local.vouchers, remote.vouchers),
+    pending_orders: unionById(local.pending_orders, remote.pending_orders),
+    suppliers: unionById(local.suppliers, remote.suppliers),
+    purchase_orders: unionById(local.purchase_orders || local.po, remote.purchase_orders || remote.po),
+    shifts: unionById(local.shifts || local.shift_sessions, remote.shifts || remote.shift_sessions),
+    shift_schedules: unionById(local.shift_schedules, remote.shift_schedules),
+    shift_groups: unionById(local.shift_groups, remote.shift_groups),
+    opname_sessions: unionById(local.opname_sessions || local.opname, remote.opname_sessions || remote.opname),
+    returns: unionById(local.returns, remote.returns),
+    notifications: unionById(local.notifications, remote.notifications).slice(0, 100),
+    point_ledger: unionById(local.point_ledger, remote.point_ledger),
+    point_redemptions: unionById(local.point_redemptions, remote.point_redemptions),
+    users: unionById(local.users, remote.users),
+    roles: unionById(local.roles, remote.roles),
+    log: unionById(local.log, remote.log).slice(0, 200),
+    master: {
+      ...(local.master || {}),
+      ...(remote.master || {}),
+      toko: { ...(local.master?.toko || {}), ...(remote.master?.toko || {}) },
+      pajak: { ...(local.master?.pajak || {}), ...(remote.master?.pajak || {}) },
+      poin: { ...(local.master?.poin || {}), ...(remote.master?.poin || {}) },
+      absensi: { ...(local.master?.absensi || {}), ...(remote.master?.absensi || {}) },
+      struk: { ...(local.master?.struk || {}), ...(remote.master?.struk || {}) },
+      payroll_settings: { ...(local.master?.payroll_settings || {}), ...(remote.master?.payroll_settings || {}) },
+    } as any,
+    settings: {
+      ...local.settings,
+      ...remote.settings,
+    },
+    role_permissions: {
+      ...(local.role_permissions || {}),
+      ...(remote.role_permissions || {}),
+    },
+  };
 };
 
 export interface SupabaseConfig {
@@ -269,8 +365,9 @@ export const subscribeToSupabaseRealtime = (
       activeSubscription = null;
     }
 
+    const channelName = `pos_realtime_${targetStoreId}_${Date.now()}`;
     const channel = client
-      .channel('pos_realtime_' + targetStoreId)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -298,7 +395,11 @@ export const subscribeToSupabaseRealtime = (
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`[Supabase Realtime] ✅ Channel aktif terhubung (${targetStoreId})`);
+        }
+      });
 
     activeSubscription = channel;
 
@@ -332,6 +433,9 @@ CREATE TABLE IF NOT EXISTS public.pos_backups (
   client_timestamp BIGINT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- REPLICA IDENTITY FULL memastikan seluruh payload JSON dikirim saat event UPDATE Realtime
+ALTER TABLE public.pos_backups REPLICA IDENTITY FULL;
 
 -- Aktifkan Row Level Security (RLS) untuk pos_backups
 ALTER TABLE public.pos_backups ENABLE ROW LEVEL SECURITY;

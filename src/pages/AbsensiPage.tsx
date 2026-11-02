@@ -305,7 +305,9 @@ export const AbsensiPage: React.FC = () => {
       () => {
         updateDb((prev) => ({
           ...prev,
-          absensi: (prev.absensi || []).filter((item) => item.id !== record.id),
+          absensi: (prev.absensi || []).map((item) =>
+            item.id === record.id ? { ...item, deleted_at: nowISO() } : item
+          ),
         }));
         logActivity(`Hapus presensi: ${record.karyawan_nama} (${record.tanggal})`, 'Absensi');
         showToast(`✅ Catatan presensi ${record.karyawan_nama} berhasil dihapus`, 'info');
