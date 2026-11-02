@@ -20,12 +20,18 @@ import {
   Eye,
   ShieldCheck,
   Sparkles,
+  Trash2,
+  Filter,
+  Calendar,
+  UserCheck,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export const AbsensiPage: React.FC = () => {
-  const { db, updateDb, showToast, logActivity, setCurrentPage } = usePOS();
+  const { db, updateDb, showToast, showConfirm, logActivity, setCurrentPage } = usePOS();
   const staff = db.karyawan || [];
   const [selectedStaffId, setSelectedStaffId] = useState<string>(staff[0]?.id || '');
   const [filterTanggal, setFilterTanggal] = useState<string>(today());
@@ -42,8 +48,13 @@ export const AbsensiPage: React.FC = () => {
   // Tab on right panel: list or photo gallery
   const [viewTab, setViewTab] = useState<'list' | 'gallery'>('list');
 
+  // Filter states
+  const [filterStaffId, setFilterStaffId] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+
   // Photo modal preview
   const [zoomPhoto, setZoomPhoto] = useState<{
+    id?: string;
     url: string;
     karyawan: string;
     tipe: 'Masuk' | 'Keluar';
@@ -287,9 +298,50 @@ export const AbsensiPage: React.FC = () => {
     setManualKeterangan('');
   };
 
-  const filteredRecords = (db.absensi || []).filter(
+  const handleDeleteAbsensi = (record: AbsensiRecord) => {
+    showConfirm(
+      'Hapus Catatan Presensi',
+      `Yakin ingin menghapus catatan presensi "${record.karyawan_nama}" pada tanggal ${record.tanggal}? Tindakan ini tidak dapat dibatalkan.`,
+      () => {
+        updateDb((prev) => ({
+          ...prev,
+          absensi: (prev.absensi || []).filter((item) => item.id !== record.id),
+        }));
+        logActivity(`Hapus presensi: ${record.karyawan_nama} (${record.tanggal})`, 'Absensi');
+        showToast(`✅ Catatan presensi ${record.karyawan_nama} berhasil dihapus`, 'info');
+        setZoomPhoto(null);
+      },
+      'danger'
+    );
+  };
+
+  const handleQuickChangeStatus = (recordId: string, newStatus: AbsensiRecord['status']) => {
+    updateDb((prev) => ({
+      ...prev,
+      absensi: (prev.absensi || []).map((a) =>
+        a.id === recordId ? { ...a, status: newStatus } : a
+      ),
+    }));
+    showToast(`Status presensi diubah menjadi ${newStatus.toUpperCase()}`, 'success');
+    logActivity(`Ubah status presensi ID ${recordId} -> ${newStatus}`, 'Absensi');
+  };
+
+  const recordsForDate = (db.absensi || []).filter(
     (a) => a.tanggal === filterTanggal && !a.deleted_at
   );
+
+  const filteredRecords = recordsForDate.filter((a) => {
+    const matchesStaff = filterStaffId === 'all' || a.karyawan_id === filterStaffId;
+    const matchesStatus = filterStatus === 'all' || a.status === filterStatus;
+    return matchesStaff && matchesStatus;
+  });
+
+  const stats = {
+    total: recordsForDate.length,
+    hadir: recordsForDate.filter((r) => r.status === 'hadir').length,
+    telat: recordsForDate.filter((r) => r.status === 'telat').length,
+    izinLainnya: recordsForDate.filter((r) => ['izin', 'sakit', 'alfa', 'cuti'].includes(r.status)).length,
+  };
 
   const exportPDF = () => {
     const doc = new jsPDF();
@@ -544,16 +596,16 @@ export const AbsensiPage: React.FC = () => {
         <div className="lg:col-span-7 bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
           <div>
             {/* Header & Controls */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3.5">
               <div>
-                <h3 className="font-bold text-sm text-slate-800 dark:text-white flex items-center gap-2">
-                  <span>📊 Rekap & Bukti Foto Kehadiran</span>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
+                <h3 className="font-extrabold text-sm text-slate-800 dark:text-white flex items-center gap-2">
+                  <span>📊 Rekap & Bukti Presensi Staf</span>
+                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
                     {filteredRecords.length} Catatan
                   </span>
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Klik foto thumbnail untuk melihat foto resolusi penuh.
+                  Verifikasi foto wajah presensi, koreksi status, atau hapus data
                 </p>
               </div>
 
@@ -576,38 +628,90 @@ export const AbsensiPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Date filter & View tab switcher */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-4">
-              <input
-                type="date"
-                value={filterTanggal}
-                onChange={(e) => setFilterTanggal(e.target.value)}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-200"
-              />
+            {/* Quick Stats Summary Bar */}
+            <div className="grid grid-cols-4 gap-2 mb-3.5">
+              <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-center">
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Total</div>
+                <div className="text-base font-black text-slate-800 dark:text-white">{stats.total}</div>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 text-center">
+                <div className="text-[10px] text-emerald-600 font-bold uppercase">Tepat</div>
+                <div className="text-base font-black text-emerald-600">{stats.hadir}</div>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 text-center">
+                <div className="text-[10px] text-amber-600 font-bold uppercase">Telat</div>
+                <div className="text-base font-black text-amber-600">{stats.telat}</div>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900 text-center">
+                <div className="text-[10px] text-rose-600 font-bold uppercase">Izin / Alfa</div>
+                <div className="text-base font-black text-rose-600">{stats.izinLainnya}</div>
+              </div>
+            </div>
 
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-750 p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setViewTab('list')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                    viewTab === 'list'
-                      ? 'bg-white dark:bg-slate-800 text-teal-600 shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
+            {/* Filter Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 mb-3.5">
+              <div className="sm:col-span-4">
+                <input
+                  type="date"
+                  value={filterTanggal}
+                  onChange={(e) => setFilterTanggal(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-200"
+                />
+              </div>
+
+              <div className="sm:col-span-4">
+                <select
+                  value={filterStaffId}
+                  onChange={(e) => setFilterStaffId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-semibold"
                 >
-                  Daftar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewTab('gallery')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
-                    viewTab === 'gallery'
-                      ? 'bg-white dark:bg-slate-800 text-teal-600 shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
+                  <option value="all">Semua Karyawan ({staff.length})</option>
+                  {staff.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nama}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="sm:col-span-4 flex items-center gap-1.5">
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-semibold"
                 >
-                  <ImageIcon className="w-3 h-3" /> Galeri Foto
-                </button>
+                  <option value="all">Semua Status</option>
+                  <option value="hadir">Hadir</option>
+                  <option value="telat">Telat</option>
+                  <option value="izin">Izin</option>
+                  <option value="sakit">Sakit</option>
+                  <option value="alfa">Alfa</option>
+                </select>
+
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-750 p-1 rounded-xl shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setViewTab('list')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                      viewTab === 'list'
+                        ? 'bg-white dark:bg-slate-800 text-teal-600 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewTab('gallery')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                      viewTab === 'gallery'
+                        ? 'bg-white dark:bg-slate-800 text-teal-600 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Foto
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -616,7 +720,7 @@ export const AbsensiPage: React.FC = () => {
               {filteredRecords.length === 0 ? (
                 <div className="text-center py-12 text-slate-400 text-xs">
                   <Camera className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  Belum ada presensi tercatat pada tanggal {filterTanggal}
+                  Tidak ada catatan presensi yang sesuai pada tanggal {filterTanggal}
                 </div>
               ) : viewTab === 'list' ? (
                 /* LIST VIEW */
@@ -633,6 +737,7 @@ export const AbsensiPage: React.FC = () => {
                             type="button"
                             onClick={() =>
                               setZoomPhoto({
+                                id: a.id,
                                 url: a.foto_masuk!,
                                 karyawan: a.karyawan_nama,
                                 tipe: 'Masuk',
@@ -663,6 +768,7 @@ export const AbsensiPage: React.FC = () => {
                             type="button"
                             onClick={() =>
                               setZoomPhoto({
+                                id: a.id,
                                 url: a.foto_keluar!,
                                 karyawan: a.karyawan_nama,
                                 tipe: 'Keluar',
@@ -697,22 +803,49 @@ export const AbsensiPage: React.FC = () => {
                           <span className="text-amber-600 font-medium">
                             Keluar: {a.jam_keluar || '-'}
                           </span>
+                          {a.keterangan && (
+                            <>
+                              <span>•</span>
+                              <span className="text-slate-400 italic truncate max-w-[120px]">
+                                {a.keterangan}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full font-bold uppercase text-[10px] ${
+                      {/* Status Dropdown */}
+                      <select
+                        value={a.status}
+                        onChange={(e) => handleQuickChangeStatus(a.id, e.target.value as any)}
+                        className={`px-2 py-0.5 rounded-full font-bold uppercase text-[10px] cursor-pointer outline-none border-0 ${
                           a.status === 'hadir'
                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                             : a.status === 'telat'
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                             : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                         }`}
+                        title="Klik untuk ubah status presensi"
                       >
-                        {a.status}
-                      </span>
+                        <option value="hadir">HADIR</option>
+                        <option value="telat">TELAT</option>
+                        <option value="izin">IZIN</option>
+                        <option value="sakit">SAKIT</option>
+                        <option value="alfa">ALFA</option>
+                        <option value="cuti">CUTI</option>
+                      </select>
+
+                      {/* Delete Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAbsensi(a)}
+                        className="p-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 transition-colors"
+                        title="Hapus data presensi ini"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 ))
@@ -729,17 +862,27 @@ export const AbsensiPage: React.FC = () => {
                           <span className="font-bold text-xs text-slate-800 dark:text-white truncate">
                             {a.karyawan_nama}
                           </span>
-                          <span
-                            className={`px-1.5 py-0.2 rounded-full font-bold uppercase text-[9px] ${
-                              a.status === 'hadir'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : a.status === 'telat'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-rose-100 text-rose-800'
-                            }`}
-                          >
-                            {a.status}
-                          </span>
+                          <div className="flex items-center gap-1">
+                            <span
+                              className={`px-1.5 py-0.2 rounded-full font-bold uppercase text-[9px] ${
+                                a.status === 'hadir'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : a.status === 'telat'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {a.status}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAbsensi(a)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                              title="Hapus presensi"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Photos row */}
@@ -748,6 +891,7 @@ export const AbsensiPage: React.FC = () => {
                             <div
                               onClick={() =>
                                 setZoomPhoto({
+                                  id: a.id,
                                   url: a.foto_masuk!,
                                   karyawan: a.karyawan_nama,
                                   tipe: 'Masuk',
@@ -776,6 +920,7 @@ export const AbsensiPage: React.FC = () => {
                             <div
                               onClick={() =>
                                 setZoomPhoto({
+                                  id: a.id,
                                   url: a.foto_keluar!,
                                   karyawan: a.karyawan_nama,
                                   tipe: 'Keluar',
@@ -851,12 +996,21 @@ export const AbsensiPage: React.FC = () => {
             </div>
 
             <div className="p-3.5 bg-slate-50 dark:bg-slate-850 flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                Status: <b className="uppercase text-teal-600">{zoomPhoto.status || 'Hadir'}</b>
-              </span>
+              {zoomPhoto.id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const record = (db.absensi || []).find((r) => r.id === zoomPhoto.id);
+                    if (record) handleDeleteAbsensi(record);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold flex items-center gap-1 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Hapus Presensi
+                </button>
+              )}
               <button
                 onClick={() => setZoomPhoto(null)}
-                className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold"
+                className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold ml-auto"
               >
                 Tutup
               </button>

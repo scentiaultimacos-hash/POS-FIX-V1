@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { usePOS } from '../context/POSContext';
-import { Database, AlertTriangle, Trash2, Download, RefreshCw, HardDrive, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { Database, AlertTriangle, Trash2, Download, RefreshCw, HardDrive, ShieldAlert, CheckCircle2, Cloud } from 'lucide-react';
 import { seedV7 } from '../utils/seed';
 import { DB_KEY } from '../utils/constants';
+import { BackupModal } from '../components/modals/BackupModal';
 
 export const DatabasePage: React.FC = () => {
   const { db, setDb, addNotification, openPinModal } = usePOS();
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
 
   const [purgeCutoffDate, setPurgeCutoffDate] = useState(() => {
     const d = new Date();
@@ -102,13 +104,23 @@ export const DatabasePage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleDownloadBackup}
-          className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold flex items-center gap-1.5 shadow-sm self-start sm:self-auto"
-        >
-          <Download className="w-4 h-4" /> Unduh Cadangan JSON
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={() => setIsBackupModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+          >
+            <Cloud className="w-4 h-4" /> Supabase Realtime Sync
+          </button>
+          <button
+            onClick={handleDownloadBackup}
+            className="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+          >
+            <Download className="w-4 h-4" /> Unduh Cadangan JSON
+          </button>
+        </div>
       </div>
+
+      <BackupModal isOpen={isBackupModalOpen} onClose={() => setIsBackupModalOpen(false)} />
 
       {/* Storage Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

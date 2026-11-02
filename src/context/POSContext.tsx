@@ -21,6 +21,8 @@ import {
   verifyPassword,
   playSound,
   applyThemeColor,
+  SUPABASE_URL,
+  SUPABASE_ANON,
 } from '../utils/constants';
 import { seedV7 } from '../utils/seed';
 import {
@@ -28,6 +30,7 @@ import {
   downloadStateFromSupabase,
   subscribeToSupabaseRealtime,
   CLIENT_SESSION_ID,
+  getStoredSupabaseConfig,
 } from '../services/supabase';
 
 export interface ToastMessage {
@@ -270,13 +273,22 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [updateDb]);
 
   // Cloud Sync State
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'needs_table' | 'error'>('synced');
+  const checkCloudReady = useCallback(() => {
+    const cfg = getStoredSupabaseConfig();
+    return Boolean((SUPABASE_URL || cfg.url) && (SUPABASE_ANON || cfg.anonKey));
+  }, []);
+
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'needs_table' | 'error'>(() => {
+    const cfg = getStoredSupabaseConfig();
+    return Boolean((SUPABASE_URL || cfg.url) && (SUPABASE_ANON || cfg.anonKey)) ? 'synced' : 'offline';
+  });
   const [lastCloudSyncTime, setLastCloudSyncTime] = useState<string | null>(null);
   const syncTimeoutRef = useRef<any>(null);
   const isRemoteSyncRef = useRef<boolean>(false);
 
   const triggerCloudSync = useCallback(async () => {
-    if (!navigator.onLine) {
+    const isReady = checkCloudReady();
+    if (!isReady || !navigator.onLine) {
       setCloudSyncStatus('offline');
       return;
     }
@@ -290,10 +302,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       setCloudSyncStatus('error');
     }
-  }, [db]);
+  }, [db, checkCloudReady]);
 
   // Debounced auto-sync: only runs when idle for 2500ms and not disabled
   useEffect(() => {
+    const isReady = checkCloudReady();
+    if (!isReady) {
+      setCloudSyncStatus('offline');
+      return;
+    }
     if (isRemoteSyncRef.current) {
       isRemoteSyncRef.current = false;
       return;
@@ -323,10 +340,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
-  }, [db]);
+  }, [db, checkCloudReady]);
 
   // Initial cloud fetch and realtime subscription with echo suppression
   useEffect(() => {
+    const isReady = checkCloudReady();
+    if (!isReady) {
+      setCloudSyncStatus('offline');
+      return;
+    }
     const localModified = Number(localStorage.getItem('pos_last_modified') || 0);
 
     // 1. Initial connection check & pull ONLY if local is unedited or cloud is confirmed newer
