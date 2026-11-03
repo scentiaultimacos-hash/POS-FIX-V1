@@ -460,10 +460,21 @@ export const KasirPage: React.FC = () => {
         <div className="hidden lg:flex flex-col bg-white dark:bg-slate-800 rounded-3xl shadow-xs border border-slate-100 dark:border-slate-700/60 overflow-hidden">
           {/* Cart Header */}
           <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-[#00C9A7]" />
-              <h3 className="font-bold text-sm text-slate-800 dark:text-white">Keranjang Belanja</h3>
-              <span className="text-xs text-slate-400 font-semibold">({cartTotalItems})</span>
+            <div className="flex items-center gap-2.5">
+              {db.master?.logo ? (
+                <img src={db.master.logo} alt="Logo" className="w-7 h-7 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shadow-2xs" />
+              ) : (
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#00C9A7] to-[#00A88E] text-white flex items-center justify-center font-bold text-xs shadow-2xs">
+                  <ShoppingCart className="w-3.5 h-3.5 text-white" />
+                </div>
+              )}
+              <div>
+                <h3 className="font-bold text-sm text-slate-800 dark:text-white flex items-center gap-1.5 leading-none">
+                  <span>Keranjang Belanja</span>
+                  <span className="text-xs text-[#00C9A7] font-extrabold">({cartTotalItems})</span>
+                </h3>
+                <span className="text-[10px] text-slate-400">{db.master?.toko?.nama || 'Parfumku POS'}</span>
+              </div>
             </div>
             <div className="flex items-center gap-1.5">
               <button

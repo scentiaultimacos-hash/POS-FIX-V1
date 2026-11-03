@@ -91,26 +91,24 @@ export const mergeDatabaseStates = (local: DatabaseState, remote: DatabaseState)
     aroma: unionById(local.aroma, remote.aroma),
     ukuran: unionById(local.ukuran, remote.ukuran),
     harga: unionById(local.harga, remote.harga),
-    produk: unionById(local.produk, remote.produk),
-    bahan_baku: unionById(local.bahan_baku, remote.bahan_baku),
-    pelanggan: unionById(local.pelanggan, remote.pelanggan),
-    karyawan: unionById(local.karyawan, remote.karyawan),
+    produk: unionById(local.produk, remote.produk).filter((p: any) => !p.id?.startsWith('prd_v7_')),
+    bahan_baku: unionById(local.bahan_baku, remote.bahan_baku).filter((b: any) => !b.id?.startsWith('bb_')),
+    pelanggan: unionById(local.pelanggan, remote.pelanggan).filter((p: any) => !p.telepon?.startsWith('08123456789')),
+    karyawan: unionById(local.karyawan, remote.karyawan).filter((k: any) => !k.telepon?.startsWith('0812111000')),
     absensi: (() => {
       const merged = unionById(local.absensi, remote.absensi);
-      const hasReal = merged.some((a: any) => !a.id?.startsWith('abs_sample_'));
-      return hasReal ? merged.filter((a: any) => !a.id?.startsWith('abs_sample_')) : merged;
+      return merged.filter((a: any) => !a.id?.startsWith('abs_sample_'));
     })(),
     payroll: unionById(local.payroll, remote.payroll),
     transaksi: (() => {
       const merged = unionById(local.transaksi, remote.transaksi);
-      const hasReal = merged.some((t: any) => !t.id?.startsWith('trx_') && !t.nomor?.startsWith('INV-V7-'));
-      return hasReal ? merged.filter((t: any) => !t.id?.startsWith('trx_') && !t.nomor?.startsWith('INV-V7-')) : merged;
+      return merged.filter((t: any) => !t.id?.startsWith('trx_') && !t.nomor?.startsWith('INV-V7-'));
     })(),
-    kasbon: unionById(local.kasbon, remote.kasbon),
-    vouchers: unionById(local.vouchers, remote.vouchers),
+    kasbon: unionById(local.kasbon, remote.kasbon).filter((k: any) => k.id !== 'kb_1'),
+    vouchers: unionById(local.vouchers, remote.vouchers).filter((v: any) => !v.id?.startsWith('v_')),
     pending_orders: unionById(local.pending_orders, remote.pending_orders),
-    suppliers: unionById(local.suppliers, remote.suppliers),
-    purchase_orders: unionById(local.purchase_orders || local.po, remote.purchase_orders || remote.po),
+    suppliers: unionById(local.suppliers, remote.suppliers).filter((s: any) => !s.id?.startsWith('sup_')),
+    purchase_orders: unionById(local.purchase_orders || local.po, remote.purchase_orders || remote.po).filter((p: any) => !p.id?.startsWith('po_')),
     shifts: unionById(local.shifts || local.shift_sessions, remote.shifts || remote.shift_sessions),
     shift_schedules: unionById(local.shift_schedules, remote.shift_schedules),
     shift_groups: unionById(local.shift_groups, remote.shift_groups),

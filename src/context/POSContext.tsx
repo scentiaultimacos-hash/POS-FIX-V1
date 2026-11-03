@@ -123,6 +123,10 @@ interface POSContextType {
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
 
+const localSyncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('pos_local_realtime_channel')
+  : null;
+
 export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const normalizeDb = (parsed: any): DatabaseState => {
     const seeded = seedV7();
@@ -259,7 +263,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Track local edit timestamp to avoid overwriting newer local edits with stale cloud snapshots
   const lastLocalEditTimeRef = useRef<number>(0);
 
-  // Sync DB to localStorage immediately on every change
+  // Sync DB to localStorage & broadcast to all tabs/roles in real-time
   const updateDb = useCallback((updater: (prev: DatabaseState) => DatabaseState) => {
     lastLocalEditTimeRef.current = Date.now();
     setDb((prev) => {
@@ -267,6 +271,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         localStorage.setItem(DB_KEY, JSON.stringify(updated));
         localStorage.setItem('pos_last_modified', String(Date.now()));
+        localSyncChannel?.postMessage({
+          type: 'LOCAL_REALTIME_SYNC',
+          payload: updated,
+          senderId: CLIENT_SESSION_ID,
+          timestamp: Date.now(),
+        });
       } catch (err) {
         console.error('Storage full or error', err);
       }
@@ -476,6 +486,50 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [cloudConfigVersion, checkCloudReady, triggerCloudSync, showToast]);
 
+  // Instant local cross-tab & cross-role real-time synchronization
+  useEffect(() => {
+    const handleBroadcast = (event: MessageEvent) => {
+      if (event.data?.type === 'LOCAL_REALTIME_SYNC' && event.data.senderId !== CLIENT_SESSION_ID) {
+        const incoming = event.data.payload;
+        if (incoming) {
+          isRemoteSyncRef.current = true;
+          setDb(normalizeDb(incoming));
+          // If currentUser was updated (e.g. role changed, permissions altered), keep active session in sync
+          if (user) {
+            const updatedUser = (incoming.users || []).find((u: User) => u.username === user.username);
+            if (updatedUser) setUser(updatedUser);
+          }
+        }
+      }
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === DB_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          isRemoteSyncRef.current = true;
+          setDb(normalizeDb(parsed));
+          if (user) {
+            const updatedUser = (parsed.users || []).find((u: User) => u.username === user.username);
+            if (updatedUser) setUser(updatedUser);
+          }
+        } catch {}
+      }
+    };
+
+    if (localSyncChannel) {
+      localSyncChannel.addEventListener('message', handleBroadcast);
+    }
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      if (localSyncChannel) {
+        localSyncChannel.removeEventListener('message', handleBroadcast);
+      }
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [user]);
+
   // Log Activity
   const logActivity = useCallback((aksi: string, modul: string) => {
     updateDb((prev) => {
@@ -590,13 +644,41 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'Username dan password wajib diisi' };
     }
 
-    const found = (db.users || []).find((u) => u.username === cleanUser);
-    if (!found || found.aktif === false) {
-      return { success: false, error: 'User tidak ditemukan atau nonaktif' };
+    // 1. Check in db.users
+    let found = (db.users || []).find((u) => u.username?.toLowerCase() === cleanUser);
+
+    // 2. If not found in db.users, search in db.karyawan
+    if (!found) {
+      const foundKar = (db.karyawan || []).find(
+        (k) => (k.username && k.username.toLowerCase() === cleanUser) ||
+               (k.nama && k.nama.toLowerCase() === cleanUser) ||
+               (k.telepon && k.telepon === cleanUser)
+      );
+      if (foundKar && foundKar.aktif !== false) {
+        const userRole = foundKar.role || 'kasir';
+        found = {
+          id: `usr_${foundKar.id}`,
+          username: foundKar.username || cleanUser,
+          nama: foundKar.nama,
+          nama_lengkap: foundKar.nama,
+          role: userRole,
+          pin: foundKar.pin || '1234',
+          aktif: true,
+          permissions: db.role_permissions?.[userRole] || ROLE_PERMISSIONS[userRole] || [],
+        };
+      }
     }
 
-    if (!verifyPassword(cleanPass, found.password_hash)) {
-      return { success: false, error: 'Password salah' };
+    if (!found || found.aktif === false) {
+      return { success: false, error: 'User tidak ditemukan atau akun nonaktif' };
+    }
+
+    // Support verification with password hash OR direct PIN match
+    const passMatches = verifyPassword(cleanPass, found.password_hash);
+    const pinMatches = Boolean(found.pin && String(found.pin).trim() === cleanPass);
+
+    if (!passMatches && !pinMatches) {
+      return { success: false, error: 'Password atau PIN salah' };
     }
 
     setUser(found);
@@ -605,10 +687,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       JSON.stringify({ userId: found.id, username: found.username, loginAt: nowISO() })
     );
 
-    logActivity(`User login: ${found.username}`, 'Auth');
-    showToast(`👋 Selamat datang, ${found.nama}!`, 'success');
+    logActivity(`User login: ${found.username} (Role: ${found.role})`, 'Auth');
+    showToast(`👋 Selamat datang, ${found.nama}! (${found.role.toUpperCase()})`, 'success');
     return { success: true };
-  }, [db.users, logActivity, showToast]);
+  }, [db.users, db.karyawan, db.role_permissions, logActivity, showToast]);
 
   const logout = useCallback(() => {
     if (user) {

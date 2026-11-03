@@ -9,8 +9,9 @@ export const LoginScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const storeName = db.master?.toko?.nama || 'Parfumku POS';
+  const storeName = db.master?.toko?.nama || db.settings?.nama_toko || 'Parfumku POS';
   const logoText = storeName.charAt(0).toUpperCase();
+  const storeLogo = db.master?.logo || db.settings?.logo_url || null;
 
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -34,9 +35,17 @@ export const LoginScreen: React.FC = () => {
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 max-w-sm w-full shadow-2xl border border-white/20 animate-slide-up">
         {/* Logo and Brand */}
         <div className="text-center mb-6">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#00C9A7] to-[#4ADE80] flex items-center justify-center text-white font-black text-3xl mx-auto mb-3 shadow-lg ring-4 ring-white/50 dark:ring-slate-800">
-            {logoText}
-          </div>
+          {storeLogo ? (
+            <img
+              src={storeLogo}
+              alt={storeName}
+              className="w-20 h-20 rounded-2xl object-cover mx-auto mb-3 shadow-lg ring-4 ring-white/50 dark:ring-slate-800 bg-white"
+            />
+          ) : (
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#00C9A7] to-[#4ADE80] flex items-center justify-center text-white font-black text-3xl mx-auto mb-3 shadow-lg ring-4 ring-white/50 dark:ring-slate-800">
+              {logoText}
+            </div>
+          )}
           <h1 className="text-2xl font-extrabold text-[#00C9A7] tracking-tight">{storeName}</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
             Point of Sale & Retail Management v7.0

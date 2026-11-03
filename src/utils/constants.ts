@@ -4,7 +4,7 @@ import { DatabaseState, User } from '../types';
 export const SUPABASE_URL = ((import.meta as any)?.env?.VITE_SUPABASE_URL as string) || '';
 export const SUPABASE_ANON = ((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY as string) || '';
 
-export const DB_KEY = 'pos_parfum_db_v7_0';
+export const DB_KEY = 'pos_parfum_db_v7_fresh';
 export const SESSION_KEY = 'pos_parfum_session_v7';
 export const PROFILE_CACHE_KEY = 'pos_parfum_profiles_cache_v7';
 export const THEME_KEY = 'pos_parfum_theme_v7';
