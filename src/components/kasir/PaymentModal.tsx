@@ -41,6 +41,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     clearCart,
     showToast,
     logActivity,
+    triggerCloudSync,
   } = usePOS();
 
   const [selectedMethodId, setSelectedMethodId] = useState<string>('pm1');
@@ -96,6 +97,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   };
 
   const handleProcessPayment = () => {
+    if (!activeShift) {
+      showToast('⛔ KASIR OFF: Shift kasir belum dibuka. Buka shift terlebih dahulu!', 'error');
+      return;
+    }
+
     if (cart.length === 0) {
       showToast('Keranjang belanja kosong', 'error');
       return;
@@ -214,7 +220,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         return v;
       });
 
-      return {
+      const nextDb = {
         ...prev,
         produk: updatedProduk,
         pelanggan: updatedPelanggan,
@@ -223,11 +229,16 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         vouchers: updatedVouchers,
         transaksi: [newTrx, ...(prev.transaksi || [])],
       };
+
+      // IMMEDIATELY BROADCAST TO SUPABASE CLOUD (Multi-device real-time sync)
+      triggerCloudSync(nextDb);
+
+      return nextDb;
     });
 
     logActivity(`Transaksi ${invNumber} (${fmtRp(finalTotal)})`, 'Kasir');
     playSound('success', db.master?.sound?.aktif);
-    showToast('✅ Pembayaran berhasil dicatat', 'success');
+    showToast('✅ Pembayaran berhasil dicatat & disinkronkan', 'success');
 
     clearCart();
     setProcessing(false);

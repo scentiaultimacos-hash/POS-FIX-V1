@@ -95,9 +95,17 @@ export const mergeDatabaseStates = (local: DatabaseState, remote: DatabaseState)
     bahan_baku: unionById(local.bahan_baku, remote.bahan_baku),
     pelanggan: unionById(local.pelanggan, remote.pelanggan),
     karyawan: unionById(local.karyawan, remote.karyawan),
-    absensi: unionById(local.absensi, remote.absensi),
+    absensi: (() => {
+      const merged = unionById(local.absensi, remote.absensi);
+      const hasReal = merged.some((a: any) => !a.id?.startsWith('abs_sample_'));
+      return hasReal ? merged.filter((a: any) => !a.id?.startsWith('abs_sample_')) : merged;
+    })(),
     payroll: unionById(local.payroll, remote.payroll),
-    transaksi: unionById(local.transaksi, remote.transaksi),
+    transaksi: (() => {
+      const merged = unionById(local.transaksi, remote.transaksi);
+      const hasReal = merged.some((t: any) => !t.id?.startsWith('trx_') && !t.nomor?.startsWith('INV-V7-'));
+      return hasReal ? merged.filter((t: any) => !t.id?.startsWith('trx_') && !t.nomor?.startsWith('INV-V7-')) : merged;
+    })(),
     kasbon: unionById(local.kasbon, remote.kasbon),
     vouchers: unionById(local.vouchers, remote.vouchers),
     pending_orders: unionById(local.pending_orders, remote.pending_orders),

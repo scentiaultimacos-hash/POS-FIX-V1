@@ -116,7 +116,7 @@ interface POSContextType {
   // Cloud Sync
   cloudSyncStatus: 'synced' | 'syncing' | 'offline' | 'needs_table' | 'error';
   lastCloudSyncTime: string | null;
-  triggerCloudSync: () => Promise<void>;
+  triggerCloudSync: (overrideDb?: DatabaseState) => Promise<void>;
   reconnectCloud: () => void;
   cloudConfigVersion: number;
 }
@@ -248,6 +248,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cartVoucherDiskon, setCartVoucherDiskon] = useState<number>(0);
   const [cartManualDiskon, setCartManualDiskon] = useState<number>(0);
 
+  const clearCart = useCallback(() => {
+    setCart([]);
+    setCartCustomer(null);
+    setCartVoucherCode('');
+    setCartVoucherDiskon(0);
+    setCartManualDiskon(0);
+  }, []);
+
   // Track local edit timestamp to avoid overwriting newer local edits with stale cloud snapshots
   const lastLocalEditTimeRef = useRef<number>(0);
 
@@ -294,14 +302,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const syncTimeoutRef = useRef<any>(null);
   const isRemoteSyncRef = useRef<boolean>(false);
 
-  const triggerCloudSync = useCallback(async () => {
+  const triggerCloudSync = useCallback(async (overrideDb?: DatabaseState) => {
     const isReady = checkCloudReady();
     if (!isReady || !navigator.onLine) {
       setCloudSyncStatus('offline');
       return;
     }
     setCloudSyncStatus('syncing');
-    const res = await uploadStateToSupabase(db);
+    const targetDb = overrideDb || db;
+    const res = await uploadStateToSupabase(targetDb);
     if (res.success) {
       setCloudSyncStatus('synced');
       setLastCloudSyncTime(res.timestamp || new Date().toISOString());
@@ -365,7 +374,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!isSubscribed) return;
       if (res.success && res.data) {
         setDb((currentDb) => {
-          const merged = mergeDatabaseStates(currentDb, res.data!);
+          const hasLocalModifications = Number(localStorage.getItem('pos_last_modified') || 0) > 0;
+          // If this device never modified local state, adopt cloud state cleanly so reports never diverge!
+          const merged = hasLocalModifications ? mergeDatabaseStates(currentDb, res.data!) : normalizeDb(res.data!);
           const normalized = normalizeDb(merged);
           try {
             localStorage.setItem(DB_KEY, JSON.stringify(normalized));
@@ -512,7 +523,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Active Shift
   const activeShift = useMemo(() => {
     if (!user) return null;
-    return (db.shifts || []).find((s) => s.status === 'aktif' && s.kasir_id === user.id) || null;
+    const myShift = (db.shifts || []).find((s) => s.status === 'aktif' && s.kasir_id === user.id);
+    if (myShift) return myShift;
+    // Allow owner or manager to view and manage active cashier shift in the store
+    if (user.role === 'owner' || user.role === 'manager') {
+      return (db.shifts || []).find((s) => s.status === 'aktif') || null;
+    }
+    return null;
   }, [db.shifts, user]);
 
   const bukaShift = useCallback((modalAwal: number) => {
@@ -527,33 +544,42 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       total_penjualan: 0,
       total_transaksi: 0,
     };
-    updateDb((prev) => ({
-      ...prev,
-      shifts: [newSession, ...(prev.shifts || [])],
-    }));
-    logActivity(`Buka shift dengan modal ${modalAwal}`, 'Shift');
-    showToast('✅ Shift berhasil dibuka', 'success');
-  }, [user, updateDb, logActivity, showToast]);
+    updateDb((prev) => {
+      const nextDb = {
+        ...prev,
+        shifts: [newSession, ...(prev.shifts || []).filter((s) => s.id !== newSession.id)],
+      };
+      triggerCloudSync(nextDb);
+      return nextDb;
+    });
+    logActivity(`Buka shift kasir dengan modal ${modalAwal}`, 'Shift');
+    showToast('🟢 Shift berhasil dibuka — Kasir AKTIF & siap melayani transaksi!', 'success');
+  }, [user, updateDb, logActivity, showToast, triggerCloudSync]);
 
   const tutupShift = useCallback((uangFisik: number, catatan?: string) => {
     if (!activeShift) return;
-    updateDb((prev) => ({
-      ...prev,
-      shifts: (prev.shifts || []).map((s) =>
-        s.id === activeShift.id
-          ? {
-              ...s,
-              status: 'tutup',
-              tutup_at: nowISO(),
-              uang_fisik: uangFisik,
-              catatan: catatan || '',
-            }
-          : s
-      ),
-    }));
-    logActivity(`Tutup shift. Fisik: ${uangFisik}`, 'Shift');
-    showToast('✅ Shift ditutup', 'info');
-  }, [activeShift, updateDb, logActivity, showToast]);
+    updateDb((prev) => {
+      const nextDb = {
+        ...prev,
+        shifts: (prev.shifts || []).map((s) =>
+          s.id === activeShift.id
+            ? {
+                ...s,
+                status: 'tutup' as const,
+                tutup_at: nowISO(),
+                uang_fisik: uangFisik,
+                catatan: catatan || '',
+              }
+            : s
+        ),
+      };
+      triggerCloudSync(nextDb);
+      return nextDb;
+    });
+    clearCart();
+    logActivity(`Tutup shift kasir. Fisik: ${uangFisik}`, 'Shift');
+    showToast('🔴 Shift ditutup — Status kasir menjadi OFF', 'info');
+  }, [activeShift, updateDb, logActivity, showToast, clearCart, triggerCloudSync]);
 
   // Login & Logout
   const login = useCallback(async (usernameVal: string, passwordVal: string): Promise<{ success: boolean; error?: string }> => {
@@ -654,6 +680,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Cart operations
   const addToCart = useCallback((produkId: string, qty = 1): boolean => {
+    if (!activeShift) {
+      showToast('⚠️ KASIR OFF: Buka shift kasir terlebih dahulu dengan modal awal!', 'warning');
+      return false;
+    }
     const prod = (db.produk || []).find((p) => p.id === produkId);
     if (!prod) return false;
     if (prod.stok <= 0) {
@@ -695,7 +725,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     playSound('add', db.master?.sound?.aktif);
     return true;
-  }, [db.produk, db.master?.sound?.aktif, showToast]);
+  }, [activeShift, db.produk, db.master?.sound?.aktif, showToast]);
 
   const updateCartQty = useCallback((produkId: string, qty: number) => {
     const prod = (db.produk || []).find((p) => p.id === produkId);
@@ -722,14 +752,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const removeFromCart = useCallback((produkId: string) => {
     setCart((prev) => prev.filter((i) => i.id !== produkId));
-  }, []);
-
-  const clearCart = useCallback(() => {
-    setCart([]);
-    setCartCustomer(null);
-    setCartVoucherCode('');
-    setCartVoucherDiskon(0);
-    setCartManualDiskon(0);
   }, []);
 
   const applyVoucher = useCallback((code: string) => {

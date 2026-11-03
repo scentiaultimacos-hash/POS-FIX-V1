@@ -115,6 +115,11 @@ export const KasirPage: React.FC = () => {
   };
 
   const handleBarcodeScanned = (code: string) => {
+    if (!activeShift) {
+      setIsShiftModalOpen(true);
+      showToast('⛔ KASIR OFF: Buka shift kasir terlebih dahulu sebelum scan barcode!', 'warning');
+      return;
+    }
     const found = (db.produk || []).find(
       (p) => p.sku.toLowerCase() === code.toLowerCase() || p.barcode === code
     );
@@ -152,20 +157,58 @@ export const KasirPage: React.FC = () => {
 
   return (
     <div className="space-y-4 animate-fade-in pb-16">
-      {/* Shift warning banner if shift not opened */}
-      {!activeShift && (
-        <div className="rounded-2xl p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200 shadow-xs">
-          <div className="flex items-center gap-3 min-w-0">
-            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-            <div className="text-xs md:text-sm">
-              <b>Shift Kasir Belum Dibuka.</b> Silakan buka shift terlebih dahulu untuk merekap transaksi dan modal awal kasir.
+      {/* Live Kasir Status Indicator: KASIR ON vs KASIR OFF */}
+      {!activeShift ? (
+        <div className="rounded-3xl p-5 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border-2 border-dashed border-amber-300 dark:border-amber-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-xl shadow-md shrink-0">
+              🔒
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 text-[11px] font-black uppercase tracking-wider">
+                  STATUS: KASIR OFF
+                </span>
+                <span className="text-xs font-bold text-slate-800 dark:text-white">Shift Kasir Belum Dibuka</span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-xl">
+                Kasir <b>TIDAK BISA ON / Transaksi</b> sebelum shift dibuka. Masukkan modal awal kasir dan buka shift untuk mulai melayani penjualan.
+              </p>
             </div>
           </div>
           <button
             onClick={() => setIsShiftModalOpen(true)}
-            className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shrink-0 transition-colors shadow-xs"
+            className="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shrink-0 transition-all shadow-md flex items-center gap-2 animate-pulse"
           >
-            Buka Shift
+            <AlertTriangle className="w-4 h-4" /> Buka Shift Kasir Sekarang
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-3xl p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+              🟢
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[11px] font-black uppercase tracking-wider">
+                  STATUS: KASIR ON (AKTIF)
+                </span>
+                <span className="text-xs font-bold text-slate-800 dark:text-white">Kasir: {activeShift.kasir_nama}</span>
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
+                <span>Buka: <b>{new Date(activeShift.buka_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</b></span>
+                <span>Modal Awal: <b className="text-slate-700 dark:text-slate-200">{fmtRp(activeShift.modal_awal)}</b></span>
+                <span>Omset Sesi Ini: <b className="text-emerald-600 dark:text-emerald-400">{fmtRp(activeShift.total_penjualan || 0)}</b></span>
+                <span>Transaksi: <b>{activeShift.total_transaksi || 0} struk</b></span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsShiftModalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-red-500 hover:text-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 self-start md:self-auto"
+          >
+            Tutup Shift Kasir
           </button>
         </div>
       )}
@@ -281,9 +324,18 @@ export const KasirPage: React.FC = () => {
                       return (
                         <div
                           key={p.id}
-                          onClick={() => !isOutOfStock && addToCart(p.id)}
+                          onClick={() => {
+                            if (!activeShift) {
+                              setIsShiftModalOpen(true);
+                              showToast('⛔ KASIR OFF: Buka shift kasir terlebih dahulu dengan modal awal!', 'warning');
+                              return;
+                            }
+                            if (!isOutOfStock) addToCart(p.id);
+                          }}
                           className={`product-card group relative p-3 rounded-2xl border text-left flex flex-col justify-between transition-all select-none cursor-pointer ${
-                            isOutOfStock
+                            !activeShift
+                              ? 'border-dashed border-amber-200 dark:border-amber-800 bg-amber-50/20 dark:bg-amber-950/10 hover:border-amber-400'
+                              : isOutOfStock
                               ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-900 border-slate-200'
                               : inCartItem
                               ? 'border-[#00C9A7] bg-teal-50/30 dark:bg-teal-950/20 shadow-xs'
@@ -656,14 +708,23 @@ export const KasirPage: React.FC = () => {
               <span className="text-lg text-[#00C9A7]">{fmtRp(cartGrandTotal)}</span>
             </div>
 
-            {/* Pay Button */}
-            <button
-              onClick={() => setIsPayModalOpen(true)}
-              disabled={cart.length === 0}
-              className="w-full py-3.5 rounded-2xl bg-[#00C9A7] hover:bg-[#00B894] text-white font-extrabold text-sm shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-50 mt-2"
-            >
-              <CreditCard className="w-4 h-4" /> BAYAR SEKARANG ({fmtRp(cartGrandTotal)})
-            </button>
+            {/* Pay Button / Shift Guard */}
+            {!activeShift ? (
+              <button
+                onClick={() => setIsShiftModalOpen(true)}
+                className="w-full py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-sm shadow-md flex items-center justify-center gap-2 transition-all mt-2 animate-pulse"
+              >
+                <AlertTriangle className="w-4 h-4" /> KASIR OFF — Buka Shift Terlebih Dahulu
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsPayModalOpen(true)}
+                disabled={cart.length === 0}
+                className="w-full py-3.5 rounded-2xl bg-[#00C9A7] hover:bg-[#00B894] text-white font-extrabold text-sm shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-50 mt-2"
+              >
+                <CreditCard className="w-4 h-4" /> BAYAR SEKARANG ({fmtRp(cartGrandTotal)})
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -758,16 +819,28 @@ export const KasirPage: React.FC = () => {
                 >
                   Hold Pesanan
                 </button>
-                <button
-                  onClick={() => {
-                    setIsMobileCartOpen(false);
-                    setIsPayModalOpen(true);
-                  }}
-                  disabled={cart.length === 0}
-                  className="py-3 rounded-xl bg-[#00C9A7] text-white font-bold text-xs disabled:opacity-50"
-                >
-                  BAYAR
-                </button>
+                {!activeShift ? (
+                  <button
+                    onClick={() => {
+                      setIsMobileCartOpen(false);
+                      setIsShiftModalOpen(true);
+                    }}
+                    className="py-3 rounded-xl bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-1"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5" /> Buka Shift
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setIsMobileCartOpen(false);
+                      setIsPayModalOpen(true);
+                    }}
+                    disabled={cart.length === 0}
+                    className="py-3 rounded-xl bg-[#00C9A7] text-white font-bold text-xs disabled:opacity-50"
+                  >
+                    BAYAR
+                  </button>
+                )}
               </div>
             </div>
           </div>

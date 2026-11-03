@@ -31,7 +31,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export const AbsensiPage: React.FC = () => {
-  const { db, updateDb, showToast, showConfirm, logActivity, setCurrentPage } = usePOS();
+  const { db, updateDb, showToast, showConfirm, logActivity, setCurrentPage, triggerCloudSync } = usePOS();
   const staff = db.karyawan || [];
   const [selectedStaffId, setSelectedStaffId] = useState<string>(staff[0]?.id || '');
   const [filterTanggal, setFilterTanggal] = useState<string>(today());
@@ -235,10 +235,12 @@ export const AbsensiPage: React.FC = () => {
 
         logActivity(`Absen MASUK berfoto: ${k.nama} (${jamNow})`, 'Absensi');
         showToast(`✅ Absen Masuk berhasil: ${k.nama}`, 'success');
-        return {
+        const nextDb = {
           ...prev,
           absensi: [newRecord, ...(prev.absensi || [])],
         };
+        triggerCloudSync(nextDb);
+        return nextDb;
       } else {
         // Keluar
         if (!existing) {
@@ -258,10 +260,12 @@ export const AbsensiPage: React.FC = () => {
 
         logActivity(`Absen KELUAR berfoto: ${k.nama} (${jamNow})`, 'Absensi');
         showToast(`✅ Absen Keluar berhasil: ${k.nama}`, 'success');
-        return {
+        const nextDb = {
           ...prev,
           absensi: updated,
         };
+        triggerCloudSync(nextDb);
+        return nextDb;
       }
     });
 
@@ -287,12 +291,16 @@ export const AbsensiPage: React.FC = () => {
       keterangan: manualKeterangan || 'Input manual oleh pengelola',
     };
 
-    updateDb((prev) => ({
-      ...prev,
-      absensi: [newRecord, ...(prev.absensi || [])],
-    }));
+    updateDb((prev) => {
+      const nextDb = {
+        ...prev,
+        absensi: [newRecord, ...(prev.absensi || [])],
+      };
+      triggerCloudSync(nextDb);
+      return nextDb;
+    });
 
-    showToast(`✅ Absensi manual ${k.nama} berhasil dicatat`, 'success');
+    showToast(`✅ Absensi manual ${k.nama} berhasil dicatat & disinkronkan`, 'success');
     setIsManualModalOpen(false);
     setManualPhoto(null);
     setManualKeterangan('');
@@ -303,14 +311,18 @@ export const AbsensiPage: React.FC = () => {
       'Hapus Catatan Presensi',
       `Yakin ingin menghapus catatan presensi "${record.karyawan_nama}" pada tanggal ${record.tanggal}? Tindakan ini tidak dapat dibatalkan.`,
       () => {
-        updateDb((prev) => ({
-          ...prev,
-          absensi: (prev.absensi || []).map((item) =>
-            item.id === record.id ? { ...item, deleted_at: nowISO() } : item
-          ),
-        }));
+        updateDb((prev) => {
+          const nextDb = {
+            ...prev,
+            absensi: (prev.absensi || []).map((item) =>
+              item.id === record.id ? { ...item, deleted_at: nowISO() } : item
+            ),
+          };
+          triggerCloudSync(nextDb);
+          return nextDb;
+        });
         logActivity(`Hapus presensi: ${record.karyawan_nama} (${record.tanggal})`, 'Absensi');
-        showToast(`✅ Catatan presensi ${record.karyawan_nama} berhasil dihapus`, 'info');
+        showToast(`✅ Catatan presensi ${record.karyawan_nama} berhasil dihapus & disinkronkan`, 'info');
         setZoomPhoto(null);
       },
       'danger'
@@ -318,12 +330,16 @@ export const AbsensiPage: React.FC = () => {
   };
 
   const handleQuickChangeStatus = (recordId: string, newStatus: AbsensiRecord['status']) => {
-    updateDb((prev) => ({
-      ...prev,
-      absensi: (prev.absensi || []).map((a) =>
-        a.id === recordId ? { ...a, status: newStatus } : a
-      ),
-    }));
+    updateDb((prev) => {
+      const nextDb = {
+        ...prev,
+        absensi: (prev.absensi || []).map((a) =>
+          a.id === recordId ? { ...a, status: newStatus } : a
+        ),
+      };
+      triggerCloudSync(nextDb);
+      return nextDb;
+    });
     showToast(`Status presensi diubah menjadi ${newStatus.toUpperCase()}`, 'success');
     logActivity(`Ubah status presensi ID ${recordId} -> ${newStatus}`, 'Absensi');
   };
