@@ -1,7 +1,8 @@
-import React, { useRef } from 'react';
-import { Transaksi, MasterSettings } from '../../types';
+import React, { useRef, useState, useEffect } from 'react';
+import { Transaksi, MasterSettings, Pelanggan } from '../../types';
 import { fmtRp, fmtTgl } from '../../utils/constants';
-import { Printer, Send, X, CheckCircle2 } from 'lucide-react';
+import { Printer, Send, X, CheckCircle2, MessageCircle } from 'lucide-react';
+import { usePOS } from '../../context/POSContext';
 
 interface StrukModalProps {
   isOpen: boolean;
@@ -11,7 +12,23 @@ interface StrukModalProps {
 }
 
 export const StrukModal: React.FC<StrukModalProps> = ({ isOpen, onClose, trx, master }) => {
+  const { db } = usePOS();
   const printRef = useRef<HTMLDivElement>(null);
+  const [waPhone, setWaPhone] = useState<string>('');
+  const [isWaSent, setIsWaSent] = useState<boolean>(false);
+
+  // Auto-fill WhatsApp number from customer if available
+  useEffect(() => {
+    if (trx?.pelanggan_id) {
+      const cust = (db.pelanggan || []).find((c: Pelanggan) => c.id === trx.pelanggan_id);
+      if (cust && cust.telepon && cust.telepon !== '-') {
+        setWaPhone(cust.telepon);
+        return;
+      }
+    }
+    setWaPhone('');
+    setIsWaSent(false);
+  }, [trx, db.pelanggan]);
 
   if (!isOpen || !trx) return null;
 
@@ -27,18 +44,26 @@ export const StrukModal: React.FC<StrukModalProps> = ({ isOpen, onClose, trx, ma
   };
 
   const handleSendWA = () => {
-    let phone = trx.pelanggan_nama ? '' : '';
-    const phoneInput = prompt('Masukkan nomor WhatsApp pelanggan (misal: 6281234567890):', '628');
-    if (!phoneInput) return;
-    const cleanPhone = phoneInput.replace(/[^0-9]/g, '');
+    const raw = waPhone.trim() || '628';
+    let cleanPhone = raw.replace(/[^0-9]/g, '');
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '62' + cleanPhone.slice(1);
+    }
+    if (!cleanPhone || cleanPhone.length < 9) {
+      alert('Harap masukkan nomor WhatsApp yang valid (misal: 08123456789 atau 628123456789)');
+      return;
+    }
 
     const itemsText = (trx.items || [])
       .map((i) => `• ${i.nama} x${i.qty} = ${fmtRp(i.subtotal)}`)
       .join('\n');
 
-    const msg = `*${toko.nama}*\n${toko.alamat}\nTelp: ${toko.telepon}\n\n*STRUK PEMBELIAN*\nNo: ${trx.nomor}\nTanggal: ${fmtTgl(trx.tanggal)}\nKasir: ${trx.kasir_nama}\n${trx.pelanggan_nama ? `Pelanggan: ${trx.pelanggan_nama}\n` : ''}\n--------------------------------\n${itemsText}\n--------------------------------\nSubtotal: ${fmtRp(trx.subtotal)}\n${trx.diskon ? `Diskon: -${fmtRp(trx.diskon)}\n` : ''}${trx.pajak ? `Pajak: ${fmtRp(trx.pajak)}\n` : ''}*TOTAL: ${fmtRp(trx.total)}*\nBayar: ${fmtRp(trx.bayar)}\nKembali: ${fmtRp(trx.kembalian)}\nMetode: ${(trx.metode || []).map((m) => m.nama).join(', ')}\n\n${toko.footer}`;
+    const metodeText = (trx.metode || []).map((m) => m.nama).join(', ');
+    const msg = `*${toko.nama}*\n${toko.alamat}\nTelp: ${toko.telepon}\n\n*STRUK PEMBELIAN*\nNo: ${trx.nomor}\nTanggal: ${fmtTgl(trx.tanggal)}\nKasir: ${trx.kasir_nama}\n${trx.pelanggan_nama ? `Pelanggan: ${trx.pelanggan_nama}\n` : ''}\n--------------------------------\n${itemsText}\n--------------------------------\nSubtotal: ${fmtRp(trx.subtotal)}\n${trx.diskon ? `Diskon: -${fmtRp(trx.diskon)}\n` : ''}${trx.pajak ? `Pajak: ${fmtRp(trx.pajak)}\n` : ''}*TOTAL: ${fmtRp(trx.total)}*\nBayar: ${fmtRp(trx.bayar)}\nKembali: ${fmtRp(trx.kembalian)}\nMetode: ${metodeText}\n\n${toko.footer}`;
 
-    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank', 'noopener,noreferrer');
+    setIsWaSent(true);
   };
 
   return (
@@ -58,6 +83,7 @@ export const StrukModal: React.FC<StrukModalProps> = ({ isOpen, onClose, trx, ma
         {/* Receipt Paper Simulation */}
         <div className="p-4 overflow-y-auto flex-1 bg-slate-100 dark:bg-slate-900/60 flex justify-center">
           <div
+            id="printableStruk"
             ref={printRef}
             className="w-full max-w-[320px] bg-white p-5 rounded-xl shadow-xs text-slate-800 font-mono text-[11px] leading-relaxed border border-slate-200"
           >
@@ -128,13 +154,22 @@ export const StrukModal: React.FC<StrukModalProps> = ({ isOpen, onClose, trx, ma
                 <span>{fmtRp(trx.total)}</span>
               </div>
               <div className="flex justify-between text-slate-600 pt-1">
-                <span>Bayar ({(trx.metode || []).map((m) => m.nama).join(', ')}):</span>
+                <span>Metode:</span>
+                <span className="font-semibold">{(trx.metode || []).map((m) => m.nama).join(', ')}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Bayar:</span>
                 <span>{fmtRp(trx.bayar)}</span>
               </div>
               <div className="flex justify-between font-semibold text-slate-800">
                 <span>Kembalian:</span>
                 <span>{fmtRp(trx.kembalian)}</span>
               </div>
+              {(trx.metode || []).some((m) => m.nama.toLowerCase().includes('kasbon')) && (
+                <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-center text-amber-800 font-bold text-[10px]">
+                  STATUS: KASBON / TEMPO (PIUTANG)
+                </div>
+              )}
             </div>
 
             {/* Points earned */}
@@ -152,20 +187,41 @@ export const StrukModal: React.FC<StrukModalProps> = ({ isOpen, onClose, trx, ma
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="p-4 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-800/80">
-          <button
-            onClick={handlePrint}
-            className="py-2.5 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
-          >
-            <Printer className="w-4 h-4" /> Cetak Struk
-          </button>
-          <button
-            onClick={handleSendWA}
-            className="py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors"
-          >
-            <Send className="w-4 h-4" /> Kirim WhatsApp
-          </button>
+        {/* WhatsApp & Print Actions */}
+        <div className="p-4 border-t border-slate-100 dark:border-slate-700 space-y-3 bg-slate-50 dark:bg-slate-800/80">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <MessageCircle className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 pointer-events-none" />
+              <input
+                type="text"
+                value={waPhone}
+                onChange={(e) => setWaPhone(e.target.value)}
+                placeholder="No. WA Pelanggan (08...)"
+                className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:border-emerald-500 font-medium"
+              />
+            </div>
+            <button
+              onClick={handleSendWA}
+              className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors shrink-0"
+            >
+              <Send className="w-3.5 h-3.5" /> {isWaSent ? 'Kirim Ulang' : 'Kirim WA'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={handlePrint}
+              className="py-2.5 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <Printer className="w-4 h-4" /> Cetak Thermal (Print)
+            </button>
+            <button
+              onClick={onClose}
+              className="py-2.5 rounded-xl bg-[#00C9A7] hover:bg-[#00B894] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors"
+            >
+              <CheckCircle2 className="w-4 h-4" /> Selesai
+            </button>
+          </div>
         </div>
       </div>
     </div>

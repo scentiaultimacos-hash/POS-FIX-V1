@@ -493,8 +493,21 @@ export const LaporanStokPage: React.FC = () => {
  * ------------------------------------------------------------------ */
 export const LaporanKeuanganPage: React.FC = () => {
   const { db } = usePOS();
-  const trx = (db.transaksi || []).filter((t) => t.status === 'selesai');
-  const returns = db.returns || [];
+  const [dari, setDari] = useState(new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [sampai, setSampai] = useState(today());
+
+  const trx = useMemo(() => {
+    return (db.transaksi || []).filter(
+      (t) => t.tanggal >= dari && t.tanggal <= sampai && t.status === 'selesai'
+    );
+  }, [db.transaksi, dari, sampai]);
+
+  const returns = useMemo(() => {
+    return (db.returns || []).filter((r) => {
+      const d = r.created_at ? r.created_at.slice(0, 10) : '';
+      return !d || (d >= dari && d <= sampai);
+    });
+  }, [db.returns, dari, sampai]);
 
   const totalPenjualan = trx.reduce((s, t) => s + t.total, 0);
   const totalModal = trx.reduce((s, t) => {
@@ -508,19 +521,70 @@ export const LaporanKeuanganPage: React.FC = () => {
   const totalRetur = returns.reduce((s, r) => s + r.total, 0);
   const labaKotor = totalPenjualan - totalModal - totalRetur;
 
+  // Breakdown cashflow
+  const cashflow = useMemo(() => {
+    let tunai = 0;
+    let digital = 0;
+    let kasbon = 0;
+
+    trx.forEach((t) => {
+      (t.metode || []).forEach((m) => {
+        const name = m.nama.toLowerCase();
+        if (name.includes('tunai')) {
+          tunai += m.jumlah || t.total;
+        } else if (name.includes('kasbon') || name.includes('tempo')) {
+          kasbon += m.jumlah || t.total;
+        } else {
+          digital += m.jumlah || t.total;
+        }
+      });
+    });
+
+    return { tunai, digital, kasbon };
+  }, [trx]);
+
+  const activePiutangTotal = useMemo(() => {
+    return (db.kasbon || [])
+      .filter((k) => k.status === 'belum_lunas')
+      .reduce((s, k) => s + k.sisa, 0);
+  }, [db.kasbon]);
+
   return (
     <div className="space-y-4 animate-fade-in pb-12">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl md:text-2xl font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-            <Wallet className="w-6 h-6 text-[#00C9A7]" /> Laporan Keuangan & Laba Kotor
+            <Wallet className="w-6 h-6 text-[#00C9A7]" /> Laporan Keuangan, Laba & Arus Kas
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Analisis laba kotor dari selisih omset penjualan dikurangi harga modal HPP dan retur
+            Analisis laba kotor, HPP modal, retur, serta realisasi uang tunai vs digital dan piutang
           </p>
         </div>
       </div>
 
+      {/* Date Filter */}
+      <div className="bg-white dark:bg-slate-800 rounded-3xl p-4 shadow-xs border border-slate-100 dark:border-slate-700/60 flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="date"
+            value={dari}
+            onChange={(e) => setDari(e.target.value)}
+            className="px-3 py-1.5 rounded-xl border text-xs dark:bg-slate-900"
+          />
+          <span className="text-slate-400 text-xs">s/d</span>
+          <input
+            type="date"
+            value={sampai}
+            onChange={(e) => setSampai(e.target.value)}
+            className="px-3 py-1.5 rounded-xl border text-xs dark:bg-slate-900"
+          />
+        </div>
+        <div className="text-xs text-slate-500">
+          Periode Analisis: <b className="text-slate-700 dark:text-slate-200">{fmtTgl(dari)} - {fmtTgl(sampai)}</b>
+        </div>
+      </div>
+
+      {/* Profit & Loss Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <div className="p-5 rounded-3xl bg-teal-50 dark:bg-teal-950/40 border border-teal-100 dark:border-teal-900 shadow-xs">
           <div className="text-[11px] text-slate-500 uppercase font-bold mb-1">Total Omset Penjualan</div>
@@ -537,6 +601,30 @@ export const LaporanKeuanganPage: React.FC = () => {
         <div className="p-5 rounded-3xl bg-gradient-to-br from-[#00C9A7] to-[#00A88E] text-white shadow-md">
           <div className="text-[11px] opacity-85 uppercase font-bold mb-1">Laba Kotor Bersih</div>
           <div className="text-xl md:text-2xl font-black">{fmtRp(labaKotor)}</div>
+        </div>
+      </div>
+
+      {/* Arus Kas & Saldo Realisasi */}
+      <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-xs space-y-4">
+        <h3 className="font-extrabold text-sm text-slate-800 dark:text-white flex items-center gap-2">
+          <span>💵 Rekapitulasi Arus Kas Penerimaan Toko</span>
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900">
+            <div className="text-xs text-emerald-800 dark:text-emerald-300 font-bold mb-1">Uang Tunai (Cash in Drawer)</div>
+            <div className="text-lg font-black text-emerald-600 dark:text-emerald-400">{fmtRp(cashflow.tunai)}</div>
+            <p className="text-[10px] text-slate-400 mt-1">Uang fisik yang diterima kasir di meja kasir</p>
+          </div>
+          <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900">
+            <div className="text-xs text-blue-800 dark:text-blue-300 font-bold mb-1">Digital & Non-Tunai (QRIS / Bank)</div>
+            <div className="text-lg font-black text-blue-600 dark:text-blue-400">{fmtRp(cashflow.digital)}</div>
+            <p className="text-[10px] text-slate-400 mt-1">Penerimaan via QRIS, Transfer Rekening, dan Kartu Debit</p>
+          </div>
+          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900">
+            <div className="text-xs text-amber-800 dark:text-amber-300 font-bold mb-1">Total Sisa Piutang Kasbon Toko</div>
+            <div className="text-lg font-black text-amber-600 dark:text-amber-400">{fmtRp(activePiutangTotal)}</div>
+            <p className="text-[10px] text-slate-400 mt-1">Total tagihan kasbon aktif pelanggan yang belum lunas</p>
+          </div>
         </div>
       </div>
     </div>

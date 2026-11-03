@@ -195,6 +195,10 @@ export const PelangganPage: React.FC = () => {
                     ? 'bg-slate-200 text-slate-700'
                     : 'bg-orange-100 text-orange-800';
 
+                const custKasbon = (db.kasbon || [])
+                  .filter((k) => k.pelanggan_id === c.id && k.status === 'belum_lunas')
+                  .reduce((s, k) => s + k.sisa, 0);
+
                 return (
                   <tr key={c.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-750">
                     <td className="py-3 px-4 font-bold text-slate-800 dark:text-white flex items-center gap-2">
@@ -202,7 +206,14 @@ export const PelangganPage: React.FC = () => {
                         {c.avatar || '👤'}
                       </div>
                       <div>
-                        <div>{c.nama}</div>
+                        <div className="flex items-center gap-2">
+                          <span>{c.nama}</span>
+                          {custKasbon > 0 && (
+                            <span className="text-[9px] font-bold bg-red-100 text-red-600 dark:bg-red-950/60 dark:text-red-400 px-1.5 py-0.5 rounded-md border border-red-200 dark:border-red-800">
+                              Kasbon: {fmtRp(custKasbon)}
+                            </span>
+                          )}
+                        </div>
                         {(c.tags || []).length > 0 && (
                           <div className="flex gap-1 mt-0.5">
                             {c.tags.map((t, i) => (

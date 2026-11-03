@@ -49,13 +49,23 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [buktiTransfer, setBuktiTransfer] = useState<string | null>(null);
   const [qrisQrUrl, setQrisQrUrl] = useState<string>('');
   const [processing, setProcessing] = useState<boolean>(false);
+  const [jatuhTempoKasbon, setJatuhTempoKasbon] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    return d.toISOString().slice(0, 10);
+  });
+  const [catatanKasbon, setCatatanKasbon] = useState<string>('');
 
   // Sync dibayar when cartGrandTotal changes
   useEffect(() => {
-    setDibayar(cartGrandTotal);
-  }, [cartGrandTotal]);
+    if (selectedMethodId === 'pm_kasbon') {
+      setDibayar(0); // Default DP 0 for Kasbon
+    } else {
+      setDibayar(cartGrandTotal);
+    }
+  }, [cartGrandTotal, selectedMethodId]);
 
-  const paymentMethods: PaymentMethodConfig[] = db.master?.pembayaran?.filter((m) => m.aktif) || [
+  const basePaymentMethods: PaymentMethodConfig[] = db.master?.pembayaran?.filter((m) => m.aktif) || [
     { id: 'pm1', nama: 'Tunai', icon: '💵', biaya: 0, aktif: true },
     { id: 'pm2', nama: 'Debit', icon: '💳', biaya: 0, aktif: true },
     { id: 'pm3', nama: 'QRIS', icon: '📱', biaya: 0.7, aktif: true },
@@ -63,15 +73,21 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     { id: 'pm5', nama: 'E-Wallet', icon: '📲', biaya: 0, aktif: true },
   ];
 
+  // Guarantee Kasbon method is always available for seamless credit sales
+  const paymentMethods: PaymentMethodConfig[] = basePaymentMethods.some((m) => m.id === 'pm_kasbon')
+    ? basePaymentMethods
+    : [...basePaymentMethods, { id: 'pm_kasbon', nama: 'Kasbon (Tempo)', icon: '📝', biaya: 0, aktif: true }];
+
   const currentMethod = paymentMethods.find((m) => m.id === selectedMethodId) || paymentMethods[0];
+  const isKasbon = currentMethod.id === 'pm_kasbon';
 
   // Fee calculation if any
   const feePercent = currentMethod?.biaya || 0;
   const feeAmount = feePercent > 0 ? Math.round((cartGrandTotal * feePercent) / 100) : 0;
   const finalTotal = cartGrandTotal + feeAmount;
 
-  const kembalian = Math.max(0, dibayar - finalTotal);
-  const isKurang = dibayar < finalTotal;
+  const kembalian = isKasbon ? 0 : Math.max(0, dibayar - finalTotal);
+  const isKurang = !isKasbon && dibayar < finalTotal;
 
   // Generate QR code for QRIS
   useEffect(() => {
@@ -104,6 +120,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
     if (cart.length === 0) {
       showToast('Keranjang belanja kosong', 'error');
+      return;
+    }
+
+    if (isKasbon && !cartCustomer) {
+      showToast('⚠️ Pelanggan wajib dipilih untuk transaksi Kasbon/Tempo!', 'error');
       return;
     }
 
@@ -156,7 +177,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       created_at: nowISO(),
     };
 
-    // Update DB: add transaction, deduct products stock, update customer points, update shift stats
+    // Update DB: add transaction, deduct products stock, update customer points, update shift stats, record kasbon
     updateDb((prev) => {
       // 1. Deduct product stocks
       const updatedProduk = (prev.produk || []).map((p) => {
@@ -220,6 +241,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         return v;
       });
 
+      // 6. Record Kasbon if payment method is Kasbon (Tempo)
+      const sisaKasbon = Math.max(0, finalTotal - dibayar);
+      const newKasbonList = (isKasbon && cartCustomer)
+        ? [
+            {
+              id: uuid(),
+              pelanggan_id: cartCustomer.id,
+              pelanggan_nama: cartCustomer.nama,
+              total: finalTotal,
+              terbayar: dibayar,
+              sisa: sisaKasbon,
+              jatuh_tempo: jatuhTempoKasbon || today(),
+              status: sisaKasbon <= 0 ? ('lunas' as const) : ('belum_lunas' as const),
+              keterangan: catatanKasbon ? `Kasbon ${invNumber}: ${catatanKasbon}` : `Transaksi Kasir ${invNumber}`,
+              riwayat_bayar: dibayar > 0 ? [{ tanggal: today(), jumlah: dibayar, metode: 'Tunai (DP)' }] : [],
+              created_at: nowISO(),
+            },
+            ...(prev.kasbon || []),
+          ]
+        : prev.kasbon || [];
+
       const nextDb = {
         ...prev,
         produk: updatedProduk,
@@ -227,6 +269,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         shifts: updatedShifts,
         point_ledger: newLedger,
         vouchers: updatedVouchers,
+        kasbon: newKasbonList,
         transaksi: [newTrx, ...(prev.transaksi || [])],
       };
 
@@ -236,9 +279,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       return nextDb;
     });
 
-    logActivity(`Transaksi ${invNumber} (${fmtRp(finalTotal)})`, 'Kasir');
+    logActivity(`Transaksi ${invNumber} (${fmtRp(finalTotal)})${isKasbon ? ' [KASBON]' : ''}`, 'Kasir');
     playSound('success', db.master?.sound?.aktif);
-    showToast('✅ Pembayaran berhasil dicatat & disinkronkan', 'success');
+    showToast(isKasbon ? '✅ Transaksi Kasbon berhasil dicatat ke buku piutang' : '✅ Pembayaran berhasil dicatat & disinkronkan', 'success');
 
     clearCart();
     setProcessing(false);
@@ -380,6 +423,91 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 <span className="text-slate-600 dark:text-slate-400 font-medium">Uang Kembalian:</span>
                 <span className={`font-extrabold text-base ${isKurang ? 'text-red-500' : 'text-[#00C9A7]'}`}>
                   {isKurang ? `Kurang -${fmtRp(finalTotal - dibayar)}` : fmtRp(kembalian)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Kasbon / Tempo View */}
+          {isKasbon && (
+            <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 space-y-3 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 flex items-center justify-center font-bold text-sm">
+                  📝
+                </div>
+                <div>
+                  <h4 className="font-bold text-xs text-amber-900 dark:text-amber-200">Transaksi Kasbon / Tempo</h4>
+                  <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                    Otomatis masuk ke buku piutang pelanggan dan tercatat pada sistem
+                  </p>
+                </div>
+              </div>
+
+              {!cartCustomer ? (
+                <div className="p-3 rounded-xl bg-red-100 dark:bg-red-950/60 border border-red-200 dark:border-red-900 text-xs text-red-700 dark:text-red-300 font-semibold flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+                  <span>Wajib pilih data Pelanggan terlebih dahulu di keranjang kasir sebelum proses Kasbon!</span>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 text-xs flex justify-between items-center">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Nama Pelanggan:</span>
+                    <span className="font-bold text-slate-800 dark:text-white">{cartCustomer.nama}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-slate-500 block text-[10px]">No. Telepon:</span>
+                    <span className="font-mono text-slate-700 dark:text-slate-300">{cartCustomer.telepon}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Uang Muka / DP (Opsional)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
+                    <input
+                      type="number"
+                      value={dibayar || ''}
+                      onChange={(e) => setDibayar(Math.max(0, Number(e.target.value) || 0))}
+                      placeholder="0 (Tanpa DP)"
+                      className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-900 text-xs font-bold focus:border-[#00C9A7] outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Tanggal Jatuh Tempo
+                  </label>
+                  <input
+                    type="date"
+                    value={jatuhTempoKasbon}
+                    onChange={(e) => setJatuhTempoKasbon(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-900 text-xs font-semibold focus:border-[#00C9A7] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Catatan Kasbon (Opsional)
+                </label>
+                <input
+                  type="text"
+                  value={catatanKasbon}
+                  onChange={(e) => setCatatanKasbon(e.target.value)}
+                  placeholder="Contoh: Janji bayar tgl 15 gajian..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-900 text-xs focus:border-[#00C9A7] outline-none"
+                />
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-amber-100/80 dark:bg-amber-900/50 flex justify-between items-center text-xs font-bold text-amber-900 dark:text-amber-200">
+                <span>Sisa Piutang Kasbon:</span>
+                <span className="text-sm font-black text-red-600 dark:text-red-400">
+                  {fmtRp(Math.max(0, finalTotal - (dibayar || 0)))}
                 </span>
               </div>
             </div>

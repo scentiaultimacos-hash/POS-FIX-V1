@@ -138,3 +138,29 @@ body {
   background: var(--primary);
   color: white;
 }
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #printableStruk, #printableStruk * {
+    visibility: visible;
+  }
+  #printableStruk {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 80mm !important;
+    margin: 0 auto;
+    padding: 10px;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

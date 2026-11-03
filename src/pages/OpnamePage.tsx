@@ -6,9 +6,12 @@ import { BarcodeScannerModal } from '../components/kasir/BarcodeScannerModal';
 
 export const OpnamePage: React.FC = () => {
   const { db, updateDb, user, showToast, showConfirm, logActivity } = usePOS();
+  const [activeTab, setActiveTab] = useState<'hitung' | 'riwayat'>('hitung');
   const [search, setSearch] = useState('');
   const [filterKlas, setFilterKlas] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const sessions = db.opname_sessions || [];
 
   // Physical stock map: { [productId]: number }
   const [physicalCounts, setPhysicalCounts] = useState<Record<string, number>>(() => {
@@ -105,106 +108,218 @@ export const OpnamePage: React.FC = () => {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl md:text-2xl font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-            <ClipboardList className="w-6 h-6 text-[#00C9A7]" /> Stock Opname Fisik
+            <ClipboardList className="w-6 h-6 text-[#00C9A7]" /> Stock Opname Fisik & Rekonsiliasi
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Cocokkan stok di rak toko dengan data sistem. Scan barcode akan menambah +1 stok fisik secara otomatis.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setIsScannerOpen(true)}
-            className="px-3.5 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
-          >
-            <ScanLine className="w-4 h-4" /> Scan Barcode Opname
-          </button>
-          <button
-            onClick={handleSaveOpname}
-            className="px-4 py-2.5 rounded-xl bg-[#00C9A7] hover:bg-[#00B894] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
-          >
-            <Save className="w-4 h-4" /> Simpan Opname
-          </button>
-        </div>
+        {activeTab === 'hitung' && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsScannerOpen(true)}
+              className="px-3.5 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
+            >
+              <ScanLine className="w-4 h-4" /> Scan Barcode Opname
+            </button>
+            <button
+              onClick={handleSaveOpname}
+              className="px-4 py-2.5 rounded-xl bg-[#00C9A7] hover:bg-[#00B894] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
+            >
+              <Save className="w-4 h-4" /> Simpan Opname
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Filter and Search */}
-      <div className="bg-white dark:bg-slate-800 rounded-3xl p-4 shadow-xs border border-slate-100 dark:border-slate-700/60 flex flex-wrap gap-2">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari produk..."
-          className="flex-1 min-w-[200px] px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-900 text-xs outline-none focus:border-[#00C9A7]"
-        />
-        <select
-          value={filterKlas}
-          onChange={(e) => setFilterKlas(e.target.value)}
-          className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-900 text-xs outline-none focus:border-[#00C9A7]"
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200 dark:border-slate-700">
+        <button
+          onClick={() => setActiveTab('hitung')}
+          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 ${
+            activeTab === 'hitung'
+              ? 'border-[#00C9A7] text-[#00C9A7]'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
         >
-          <option value="">Semua Klasifikasi</option>
-          {Object.entries(KLASIFIKASI).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v.icon} {v.nama}
-            </option>
-          ))}
-        </select>
+          <ClipboardList className="w-4 h-4" /> Form Opname Fisik Aktif
+        </button>
+        <button
+          onClick={() => setActiveTab('riwayat')}
+          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 ${
+            activeTab === 'riwayat'
+              ? 'border-[#00C9A7] text-[#00C9A7]'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <CheckCircle2 className="w-4 h-4" /> Riwayat Sesi Opname ({sessions.length})
+        </button>
       </div>
 
-      {/* Opname Comparison Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-xs border border-slate-100 dark:border-slate-700/60 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 uppercase font-semibold">
-              <tr>
-                <th className="py-3 px-4">Nama Produk & SKU</th>
-                <th className="py-3 px-4 text-right">Stok Sistem</th>
-                <th className="py-3 px-4 text-center w-36">Hitung Fisik</th>
-                <th className="py-3 px-4 text-right">Selisih</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredProducts.map((p) => {
-                const fisik = physicalCounts[p.id] !== undefined ? physicalCounts[p.id] : p.stok;
-                const selisih = fisik - p.stok;
+      {activeTab === 'hitung' ? (
+        <>
+          {/* Filter and Search */}
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-4 shadow-xs border border-slate-100 dark:border-slate-700/60 flex flex-wrap gap-2">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari produk..."
+              className="flex-1 min-w-[200px] px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-900 text-xs outline-none focus:border-[#00C9A7]"
+            />
+            <select
+              value={filterKlas}
+              onChange={(e) => setFilterKlas(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-900 text-xs outline-none focus:border-[#00C9A7]"
+            >
+              <option value="">Semua Klasifikasi</option>
+              {Object.entries(KLASIFIKASI).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v.icon} {v.nama}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Opname Comparison Table */}
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-xs border border-slate-100 dark:border-slate-700/60 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 uppercase font-semibold">
+                  <tr>
+                    <th className="py-3 px-4">Nama Produk & SKU</th>
+                    <th className="py-3 px-4 text-right">Stok Sistem</th>
+                    <th className="py-3 px-4 text-center w-36">Hitung Fisik</th>
+                    <th className="py-3 px-4 text-right">Selisih</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredProducts.map((p) => {
+                    const fisik = physicalCounts[p.id] !== undefined ? physicalCounts[p.id] : p.stok;
+                    const selisih = fisik - p.stok;
+
+                    return (
+                      <tr key={p.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-750">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-800 dark:text-white">{p.nama}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">SKU: {p.sku}</div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-semibold text-slate-700 dark:text-slate-300">
+                          {p.stok} {p.satuan}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <input
+                            type="number"
+                            min="0"
+                            value={fisik}
+                            onChange={(e) => handlePhysicalChange(p.id, Number(e.target.value) || 0)}
+                            className="w-24 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 dark:bg-slate-900 text-center font-extrabold text-sm focus:border-[#00C9A7] outline-none"
+                          />
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span
+                            className={`font-bold px-2.5 py-0.5 rounded-full ${
+                              selisih === 0
+                                ? 'bg-slate-100 text-slate-600'
+                                : selisih < 0
+                                ? 'bg-red-100 text-red-600'
+                                : 'bg-emerald-100 text-emerald-700'
+                            }`}
+                          >
+                            {selisih > 0 ? `+${selisih}` : selisih} {p.satuan}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : (
+        /* Riwayat Sesi Opname View */
+        <div className="space-y-4">
+          {sessions.length === 0 ? (
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-12 text-center border border-slate-100 dark:border-slate-700 text-slate-400">
+              <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-50" />
+              <p className="font-medium text-xs">Belum ada riwayat sesi stock opname yang tersimpan.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3">
+              {sessions.map((s) => {
+                const isExpanded = selectedSessionId === s.id;
+                const itemsCount = (s.items || []).length;
+                const selisihCount = (s.items || []).filter((i) => i.selisih !== 0).length;
 
                 return (
-                  <tr key={p.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-750">
-                    <td className="py-3 px-4">
-                      <div className="font-bold text-slate-800 dark:text-white">{p.nama}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">SKU: {p.sku}</div>
-                    </td>
-                    <td className="py-3 px-4 text-right font-semibold text-slate-700 dark:text-slate-300">
-                      {p.stok} {p.satuan}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <input
-                        type="number"
-                        min="0"
-                        value={fisik}
-                        onChange={(e) => handlePhysicalChange(p.id, Number(e.target.value) || 0)}
-                        className="w-24 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 dark:bg-slate-900 text-center font-extrabold text-sm focus:border-[#00C9A7] outline-none"
-                      />
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span
-                        className={`font-bold px-2.5 py-0.5 rounded-full ${
-                          selisih === 0
-                            ? 'bg-slate-100 text-slate-600'
-                            : selisih < 0
-                            ? 'bg-red-100 text-red-600'
-                            : 'bg-emerald-100 text-emerald-700'
-                        }`}
+                  <div
+                    key={s.id}
+                    className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60 shadow-xs space-y-3"
+                  >
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <div className="text-xs font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                          <span>Sesi Opname: {s.tanggal}</span>
+                          <span className="text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
+                            Petugas: {s.petugas}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          Total {itemsCount} SKU diperiksa · {selisihCount > 0 ? `${selisihCount} item mengalami selisih` : 'Semua item cocok'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setSelectedSessionId(isExpanded ? null : s.id)}
+                        className="px-3 py-1.5 rounded-lg bg-teal-50 dark:bg-teal-950 text-[#00C9A7] text-xs font-bold hover:bg-teal-100 transition-colors"
                       >
-                        {selisih > 0 ? `+${selisih}` : selisih} {p.satuan}
-                      </span>
-                    </td>
-                  </tr>
+                        {isExpanded ? 'Tutup Detail' : 'Lihat Detail Selisih'}
+                      </button>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-semibold">
+                            <tr>
+                              <th className="py-2 px-3">Nama Produk</th>
+                              <th className="py-2 px-3 text-right">Sistem</th>
+                              <th className="py-2 px-3 text-right">Fisik</th>
+                              <th className="py-2 px-3 text-right">Selisih Rekonsiliasi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {(s.items || []).map((item, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-750">
+                                <td className="py-2 px-3 font-semibold">{item.nama}</td>
+                                <td className="py-2 px-3 text-right text-slate-500">{item.stok_sistem}</td>
+                                <td className="py-2 px-3 text-right font-bold">{item.stok_fisik}</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span
+                                    className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
+                                      item.selisih === 0
+                                        ? 'bg-slate-100 text-slate-500'
+                                        : item.selisih < 0
+                                        ? 'bg-red-100 text-red-600'
+                                        : 'bg-emerald-100 text-emerald-700'
+                                    }`}
+                                  >
+                                    {item.selisih > 0 ? `+${item.selisih}` : item.selisih}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       <BarcodeScannerModal
         isOpen={isScannerOpen}
